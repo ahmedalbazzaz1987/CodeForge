@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- Debug tab: an **Evaluate** button next to the expression field, and results show just the value (`= 30`).
+- Undoing all edits back to the saved text now clears the unsaved mark on the tab.
+
 ## 0.5.0
 
 Git and CodeLens.

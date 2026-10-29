@@ -202,7 +202,8 @@ final class DebugSession {
     }
 
     func evaluate(_ expression: String, frame: Int?, completion: @escaping (String) -> Void) {
-        var arguments: [String: Any] = ["expression": expression, "context": "repl"]
+        // "watch" evaluates the text as an expression and returns just the value ("30", not "(int) $0 = 30").
+        var arguments: [String: Any] = ["expression": expression, "context": "watch"]
         if let frame { arguments["frameId"] = frame }
         adapter.request("evaluate", arguments) { response in
             if response["success"] as? Bool == false {
@@ -287,7 +288,7 @@ final class DebugPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate, 
         stack.target = self
         stack.action = #selector(frameClicked)
 
-        expression.placeholderString = "Evaluate an expression (for example: count * 2) and press Return"
+        expression.placeholderString = "Expression to evaluate, for example: count * 2"
         expression.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         expression.target = self
         expression.action = #selector(evaluate)
@@ -306,7 +307,9 @@ final class DebugPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate, 
         result.textColor = Theme.accent
         result.lineBreakMode = .byTruncatingTail
         result.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for view in [split, expression, result] {
+        let evaluateButton = NSButton(title: "Evaluate", target: self, action: #selector(evaluate))
+        evaluateButton.controlSize = .small
+        for view in [split, expression, evaluateButton, result] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -317,7 +320,9 @@ final class DebugPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate, 
             expression.topAnchor.constraint(equalTo: split.bottomAnchor, constant: 4),
             expression.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             expression.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.5),
-            result.leadingAnchor.constraint(equalTo: expression.trailingAnchor, constant: 10),
+            evaluateButton.leadingAnchor.constraint(equalTo: expression.trailingAnchor, constant: 6),
+            evaluateButton.centerYAnchor.constraint(equalTo: expression.centerYAnchor),
+            result.leadingAnchor.constraint(equalTo: evaluateButton.trailingAnchor, constant: 10),
             result.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
             result.centerYAnchor.constraint(equalTo: expression.centerYAnchor),
             expression.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),

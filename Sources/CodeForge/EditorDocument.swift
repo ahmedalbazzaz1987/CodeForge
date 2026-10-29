@@ -19,6 +19,8 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     let scrollView = NSScrollView()
     let ruler: LineNumberRuler
     private let untitledName: String
+    /// The text as last opened or saved, so undoing back to it clears the unsaved mark.
+    private var savedText: String
     private var tokenizer: Tokenizer
     private var highlightGeneration = 0
 
@@ -52,6 +54,7 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     init(url: URL?, text: String, fontSize: CGFloat, untitledName: String = "Untitled") {
         self.url = url
         self.untitledName = untitledName
+        savedText = text
         let firstLine = text.prefix(200).split(separator: "\n", maxSplits: 1).first.map(String.init)
         language = url.map { Languages.forFile(named: $0.lastPathComponent, firstLine: firstLine) } ?? Languages.plainText
         tokenizer = Tokenizer(language: language)
@@ -127,6 +130,7 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     func write() throws {
         guard let url else { return }
         try textView.string.write(to: url, atomically: true, encoding: .utf8)
+        savedText = textView.string
         isDirty = false
         session?.saved()
     }
@@ -252,7 +256,8 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     // MARK: NSTextViewDelegate
 
     func textDidChange(_ notification: Notification) {
-        isDirty = true
+        let text = textView.string
+        isDirty = (text as NSString).length > 2_000_000 || text != savedText
         if !textView.lenses.isEmpty { textView.lenses = [:] }   // positions are stale until the next save
         if hasDiagnostics { setDiagnostics([]) }
         session?.textChanged()
