@@ -3,20 +3,31 @@ import CodeForgeKit
 
 /// Editor colors. Every color adapts to light and dark mode.
 enum Theme {
-    static let background = dynamic(0xFFFFFF, 0x1F1F24)
-    static let text = dynamic(0x1F1F24, 0xDCDCDC)
+    // Editor (Visual Studio-style light and dark palettes)
+    static let background = dynamic(0xFFFFFF, 0x1E1E1E)
+    static let text = dynamic(0x1E1E1E, 0xD4D4D4)
     static let currentLine = NSColor(name: nil) { $0.isDark ? NSColor(white: 1, alpha: 0.05) : NSColor(white: 0, alpha: 0.045) }
-    static let gutterText = NSColor.tertiaryLabelColor
-    static let gutterCurrent = NSColor.secondaryLabelColor
+    static let gutterText = dynamic(0x2B91AF, 0x858585)
+    static let gutterCurrent = dynamic(0x0B216F, 0xC6C6C6)
 
-    private static let comment = dynamic(0x5D6C79, 0x7F8C98)
-    private static let string = dynamic(0xC41A16, 0xFC6A5D)
-    private static let keyword = dynamic(0x9B2393, 0xFC5FA3)
-    private static let type = dynamic(0x0B4F79, 0x5DD8FF)
-    private static let number = dynamic(0x1C00CF, 0xD0BF69)
-    private static let function = dynamic(0x326D74, 0x67B7A4)
-    private static let attribute = dynamic(0x815F03, 0xFD8F3F)
-    private static let tag = dynamic(0x0F68A0, 0x41A1C0)
+    // Window chrome
+    static let sidebar = dynamic(0xF5F5F5, 0x252526)
+    static let chrome = dynamic(0xEEEEF2, 0x2D2D30)
+    static let separator = dynamic(0xCCCEDB, 0x3F3F46)
+    static let accent = rgb(0x007ACC)
+    static let statusIdle = rgb(0x68217A)       // no folder open
+    static let statusBusy = rgb(0xCA5100)       // a program is running
+    static let errorRed = dynamic(0xE51400, 0xF14C4C)
+    static let warningYellow = dynamic(0xBF8803, 0xCCA700)
+
+    private static let comment = dynamic(0x008000, 0x6A9955)
+    private static let string = dynamic(0xA31515, 0xCE9178)
+    private static let keyword = dynamic(0x0000FF, 0x569CD6)
+    private static let type = dynamic(0x2B91AF, 0x4EC9B0)
+    private static let number = dynamic(0x098658, 0xB5CEA8)
+    private static let function = dynamic(0x74531F, 0xDCDCAA)
+    private static let attribute = dynamic(0x001080, 0x9CDCFE)
+    private static let tag = dynamic(0x800000, 0x569CD6)
 
     static func color(for kind: TokenKind) -> NSColor {
         switch kind {
@@ -39,7 +50,7 @@ enum Theme {
         NSColor(name: nil) { $0.isDark ? rgb(dark) : rgb(light) }
     }
 
-    private static func rgb(_ hex: Int) -> NSColor {
+    static func rgb(_ hex: Int) -> NSColor {
         NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }
 }

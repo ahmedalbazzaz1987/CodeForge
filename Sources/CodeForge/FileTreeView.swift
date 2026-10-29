@@ -117,7 +117,7 @@ final class FileTreeView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.underPageBackgroundColor.withAlphaComponent(0.35).setFill()
+        Theme.sidebar.setFill()
         bounds.fill()
     }
 

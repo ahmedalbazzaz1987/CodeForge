@@ -3,12 +3,15 @@ import CodeForgeKit
 
 private extension NSToolbarItem.Identifier {
     static let files = Self("files")
-    static let run = Self("run")
+    static let newProject = Self("newProject")
+    static let open = Self("open")
+    static let saveAll = Self("saveAll")
+    static let start = Self("start")
     static let stop = Self("stop")
-    static let console = Self("console")
+    static let panel = Self("panel")
 }
 
-/// The main window: explorer, tabs, editor, console and status bar.
+/// The main window: editor tabs, explorer, bottom panel (Output, Error List, Terminal) and status bar.
 final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate,
     NSMenuItemValidation, NSToolbarItemValidation
 {
@@ -22,13 +25,19 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private let explorer = FileTreeView()
     private let tabBar = TabBarView()
     private let editorHost = NSView()
-    private let welcome = NSStackView()
-    private let console = ConsoleView()
+    private let startPage = StartPage()
+    private let panel = BottomPanel()
+    private var console: ConsoleView { panel.output }
+    private let statusBar = StatusBar()
+    private let startButton = NSButton()
     private let runStatus = NSTextField(labelWithString: "")
     private let cursorStatus = NSTextField(labelWithString: "")
     private let languageMenu = NSPopUpButton()
     private let runner = Runner()
     private var untitledCount = 0
+    private var isRunning = false
+    private var runFolder: URL?
+    private var pendingClone: URL?
     private var didPlaceDividers = false
 
     private let defaults = UserDefaults.standard
@@ -79,41 +88,23 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         innerSplit.dividerStyle = .thin
         innerSplit.delegate = self
         innerSplit.addArrangedSubview(editorArea)
-        innerSplit.addArrangedSubview(console)
+        innerSplit.addArrangedSubview(panel)
         innerSplit.setHoldingPriority(.init(260), forSubviewAt: 1)
 
         outerSplit.isVertical = true
         outerSplit.dividerStyle = .thin
         outerSplit.delegate = self
-        outerSplit.addArrangedSubview(explorer)
-        outerSplit.addArrangedSubview(innerSplit)
-        outerSplit.setHoldingPriority(.init(260), forSubviewAt: 0)
-
-        let title = NSTextField(labelWithString: "CodeForge")
-        title.font = .systemFont(ofSize: 28, weight: .semibold)
-        title.textColor = .secondaryLabelColor
-        let hint = NSTextField(labelWithString: "Open a folder or a file to start coding.")
-        hint.textColor = .tertiaryLabelColor
-        let buttons = NSStackView(views: [
-            NSButton(title: "Open…", target: self, action: #selector(openDocument(_:))),
-            NSButton(title: "New File", target: self, action: #selector(newDocument(_:))),
-        ])
-        let shortcuts = NSTextField(labelWithString: "⌘O  Open      ⌘P  Quick Open      ⌘R  Run      ⇧⌘Y  Console")
-        shortcuts.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        shortcuts.textColor = .tertiaryLabelColor
-        welcome.setViews([title, hint, buttons, shortcuts], in: .center)
-        welcome.orientation = .vertical
-        welcome.spacing = 12
-        welcome.setCustomSpacing(24, after: buttons)
+        arrangeExplorer()
 
         for field in [runStatus, cursorStatus] {
             field.font = .systemFont(ofSize: 11)
-            field.textColor = .secondaryLabelColor
+            field.textColor = .white
             field.lineBreakMode = .byTruncatingTail
         }
         runStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         languageMenu.isBordered = false
         languageMenu.font = .systemFont(ofSize: 11)
+        languageMenu.contentTintColor = .white
         languageMenu.controlSize = .small
         languageMenu.addItems(withTitles: ([Languages.plainText] + Languages.all).map(\.name))
         for (item, language) in zip(languageMenu.itemArray, [Languages.plainText] + Languages.all) {
@@ -121,9 +112,18 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         languageMenu.target = self
         languageMenu.action = #selector(languageChosen(_:))
-        let status = NSStackView(views: [runStatus, NSView(), cursorStatus, languageMenu])
-        status.spacing = 14
-        status.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 6)
+        let status = statusBar
+        let items = NSStackView(views: [runStatus, NSView(), cursorStatus, languageMenu])
+        items.spacing = 14
+        items.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 6)
+        items.translatesAutoresizingMaskIntoConstraints = false
+        status.addSubview(items)
+        NSLayoutConstraint.activate([
+            items.topAnchor.constraint(equalTo: status.topAnchor),
+            items.bottomAnchor.constraint(equalTo: status.bottomAnchor),
+            items.leadingAnchor.constraint(equalTo: status.leadingAnchor),
+            items.trailingAnchor.constraint(equalTo: status.trailingAnchor),
+        ])
 
         let root = NSView()
         for view in [outerSplit, status] {
@@ -138,11 +138,28 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             status.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             status.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             status.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            status.heightAnchor.constraint(equalToConstant: 24),
+            status.heightAnchor.constraint(equalToConstant: 22),
         ])
         window?.contentView = root
         explorer.isHidden = defaults.bool(forKey: "explorerHidden")
-        console.isHidden = defaults.bool(forKey: "consoleHidden")
+        panel.isHidden = defaults.bool(forKey: "consoleHidden")
+    }
+
+    private var explorerOnRight: Bool { defaults.object(forKey: "explorerOnRight") as? Bool ?? true }
+
+    /// Puts the explorer on the right (like Visual Studio's Solution Explorer) or the left.
+    private func arrangeExplorer() {
+        outerSplit.arrangedSubviews.forEach { outerSplit.removeArrangedSubview($0); $0.removeFromSuperview() }
+        let views: [NSView] = explorerOnRight ? [innerSplit, explorer] : [explorer, innerSplit]
+        views.forEach(outerSplit.addArrangedSubview)
+        outerSplit.setHoldingPriority(.init(250), forSubviewAt: explorerOnRight ? 0 : 1)
+        outerSplit.setHoldingPriority(.init(260), forSubviewAt: explorerOnRight ? 1 : 0)
+    }
+
+    private func placeExplorerDivider() {
+        guard !explorer.isHidden else { return }
+        let width = defaults.double(forKey: "explorerWidth").clamped(150, 500, default: 260)
+        outerSplit.setPosition(explorerOnRight ? outerSplit.bounds.width - width : width, ofDividerAt: 0)
     }
 
     override func showWindow(_ sender: Any?) {
@@ -154,36 +171,47 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     private func placeDividers() {
-        let sidebar = defaults.double(forKey: "explorerWidth").clamped(150, 500, default: 240)
-        let consoleHeight = defaults.double(forKey: "consoleHeight").clamped(80, 800, default: 200)
-        if !explorer.isHidden { outerSplit.setPosition(sidebar, ofDividerAt: 0) }
-        if !console.isHidden { innerSplit.setPosition(innerSplit.bounds.height - consoleHeight, ofDividerAt: 0) }
+        // Read before moving anything: each move saves the sizes it produces.
+        let panelHeight = defaults.double(forKey: "consoleHeight").clamped(80, 800, default: 220)
+        placeExplorerDivider()
+        if !panel.isHidden { innerSplit.setPosition(innerSplit.bounds.height - panelHeight, ofDividerAt: 0) }
     }
 
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
-        splitView === outerSplit ? 150 : max(proposed, 120)
+        guard splitView === outerSplit else { return max(proposed, 120) }
+        return explorerOnRight ? splitView.bounds.width - 500 : 150
     }
 
     func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
-        splitView === outerSplit ? min(500, splitView.bounds.width - 300) : splitView.bounds.height - 80
+        guard splitView === outerSplit else { return splitView.bounds.height - 80 }
+        return explorerOnRight ? splitView.bounds.width - 150 : min(500, splitView.bounds.width - 300)
     }
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard didPlaceDividers else { return }
         if !explorer.isHidden { defaults.set(Double(explorer.frame.width), forKey: "explorerWidth") }
-        if !console.isHidden { defaults.set(Double(console.frame.height), forKey: "consoleHeight") }
+        if !panel.isHidden { defaults.set(Double(panel.frame.height), forKey: "consoleHeight") }
     }
 
     private func buildToolbar() {
-        let toolbar = NSToolbar(identifier: "CodeForgeToolbar")
+        let toolbar = NSToolbar(identifier: "CodeForgeToolbar2")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         window?.toolbar = toolbar
         window?.toolbarStyle = .unified
+
+        startButton.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: "Start")
+        startButton.imagePosition = .imageLeading
+        startButton.bezelStyle = .texturedRounded
+        startButton.contentTintColor = .systemGreen
+        startButton.font = .systemFont(ofSize: 12, weight: .medium)
+        startButton.target = self
+        startButton.action = #selector(runActiveFile(_:))
+        startButton.toolTip = "Start (⌘R)"
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.files, .flexibleSpace, .run, .stop, .console]
+        [.newProject, .open, .saveAll, .flexibleSpace, .start, .stop, .flexibleSpace, .panel, .files]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -191,11 +219,19 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        if id == .start {
+            let item = NSToolbarItem(itemIdentifier: id)
+            item.label = "Start"
+            item.view = startButton
+            return item
+        }
         let specs: [NSToolbarItem.Identifier: (String, String, Selector)] = [
-            .files: ("Explorer", "sidebar.left", #selector(toggleExplorer(_:))),
-            .run: ("Run", "play.fill", #selector(runActiveFile(_:))),
+            .files: ("Explorer", explorerOnRight ? "sidebar.right" : "sidebar.left", #selector(toggleExplorer(_:))),
+            .newProject: ("New Project", "plus.rectangle.on.folder", #selector(newProject(_:))),
+            .open: ("Open", "folder", #selector(openDocument(_:))),
+            .saveAll: ("Save All", "square.and.arrow.down.on.square", #selector(saveAllDocuments(_:))),
             .stop: ("Stop", "stop.fill", #selector(stopRunning(_:))),
-            .console: ("Console", "rectangle.bottomthird.inset.filled", #selector(toggleConsole(_:))),
+            .panel: ("Panel", "rectangle.bottomthird.inset.filled", #selector(toggleConsole(_:))),
         ]
         guard let (label, symbol, action) = specs[id] else { return nil }
         let item = NSToolbarItem(itemIdentifier: id)
@@ -205,6 +241,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         item.isBordered = true
         item.target = self
         item.action = action
+        if id == .stop { item.image = item.image?.withSymbolConfiguration(.init(paletteColors: [.systemRed])) }
         return item
     }
 
@@ -239,6 +276,13 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             runner.send(line)
         }
         runner.onOutput = { [weak self] text, kind in self?.console.append(text, kind) }
+        panel.onHide = { [weak self] in self?.setConsoleVisible(false) }
+        panel.errors.onOpen = { [weak self] url, diagnostic in self?.open(url, line: diagnostic.line, column: diagnostic.column) }
+        startPage.onOpenRecent = { [weak self] in self?.open($0) }
+        startPage.onNewProject = { [weak self] in self?.newProject(nil) }
+        startPage.onOpen = { [weak self] in self?.openDocument(nil) }
+        startPage.onClone = { [weak self] in self?.cloneRepository(nil) }
+        startPage.onNewFile = { [weak self] in self?.newDocument(nil) }
         runner.onExit = { [weak self] status, seconds in self?.runFinished(status: status, seconds: seconds) }
     }
 
@@ -247,6 +291,13 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     // MARK: Documents
+
+    /// Opens a file and moves the cursor to a 1-based line (and column).
+    func open(_ url: URL, line: Int, column: Int? = nil) {
+        open(url)
+        guard let current, current.url?.standardizedFileURL == url.standardizedFileURL else { return }
+        current.reveal(line: line, column: column)
+    }
 
     /// Opens a file in a tab, or a folder as the workspace.
     func open(_ url: URL) {
@@ -273,6 +324,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     func setWorkspace(_ url: URL?) {
         workspaceURL = url
         explorer.setRoot(url)
+        panel.terminal.directory = url ?? FileManager.default.homeDirectoryForCurrentUser
         if let url {
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
             if explorer.isHidden { toggleExplorer(nil) }
@@ -298,7 +350,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private func select(_ index: Int) {
         selectedIndex = documents.indices.contains(index) ? index : -1
         editorHost.subviews.forEach { $0.removeFromSuperview() }
-        let content: NSView = current?.scrollView ?? welcome
+        if current == nil { startPage.reload() }
+        let content: NSView = current?.scrollView ?? startPage
         content.translatesAutoresizingMaskIntoConstraints = false
         editorHost.addSubview(content)
         NSLayoutConstraint.activate([
@@ -394,6 +447,15 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             languageMenu.select(item)
         }
         updateCursorStatus()
+        updateRunChrome()
+    }
+
+    /// The Start button names what ⌘R will run; the status bar is orange while running, purple with no folder.
+    private func updateRunChrome() {
+        let custom = customCommandKey.flatMap { defaults.string(forKey: $0) }
+        startButton.title = " " + (custom != nil ? workspaceURL!.lastPathComponent : current?.displayName ?? "Start")
+        startButton.isEnabled = !isRunning && (custom != nil || current != nil)
+        statusBar.color = isRunning ? Theme.statusBusy : (workspaceURL == nil ? Theme.statusIdle : Theme.accent)
         window?.toolbar?.validateVisibleItems()
     }
 
@@ -492,20 +554,20 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         explorer.isHidden.toggle()
         defaults.set(explorer.isHidden, forKey: "explorerHidden")
         outerSplit.adjustSubviews()
-        if !explorer.isHidden { outerSplit.setPosition(defaults.double(forKey: "explorerWidth").clamped(150, 500, default: 240), ofDividerAt: 0) }
+        placeExplorerDivider()
     }
 
     @objc func toggleConsole(_ sender: Any?) {
-        setConsoleVisible(console.isHidden)
+        setConsoleVisible(panel.isHidden)
     }
 
     private func setConsoleVisible(_ visible: Bool) {
-        guard console.isHidden == visible else { return }
-        console.isHidden = !visible
+        guard panel.isHidden == visible else { return }
+        panel.isHidden = !visible
         defaults.set(!visible, forKey: "consoleHidden")
         innerSplit.adjustSubviews()
         if visible {
-            let height = defaults.double(forKey: "consoleHeight").clamped(80, 800, default: 200)
+            let height = defaults.double(forKey: "consoleHeight").clamped(80, 800, default: 220)
             innerSplit.setPosition(innerSplit.bounds.height - height, ofDividerAt: 0)
         }
     }
@@ -549,11 +611,15 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private func start(_ command: String, in folder: URL) {
         runningLanguage = defaults.string(forKey: customCommandKey ?? "")?.isEmpty == false ? nil : current?.language
         setConsoleVisible(true)
+        panel.show(.output)
         console.clear(nil)
         console.append("$ \(command)\n", .info)
         runStatus.stringValue = "Running…"
+        runFolder = folder
+        isRunning = true
+        documents.forEach { $0.setDiagnostics([]) }
         runner.run(command, in: folder)
-        window?.toolbar?.validateVisibleItems()
+        updateRunChrome()
     }
 
     private func runFinished(status: Int32, seconds: TimeInterval) {
@@ -562,8 +628,27 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if status == 127, let hint = runningLanguage?.installHint {
             console.append("A required tool wasn't found. \(hint)\n", .info)
         }
-        runStatus.stringValue = status == 0 ? "Finished in \(time)" : "Failed (exit code \(status))"
-        window?.toolbar?.validateVisibleItems()
+        isRunning = false
+        let diagnostics = DiagnosticParser.parse(console.text)
+        let folder = runFolder ?? workspaceURL ?? FileManager.default.homeDirectoryForCurrentUser
+        panel.errors.set(diagnostics, folder: folder)
+        panel.updateTabTitles()
+        for document in documents {
+            guard let url = document.url?.standardizedFileURL else { continue }
+            document.setDiagnostics(diagnostics.filter { $0.url(relativeTo: folder).standardizedFileURL == url })
+        }
+        let errorCount = diagnostics.filter { $0.severity == .error }.count
+        if status != 0, errorCount > 0 { panel.show(.errors) }
+        if status == 0 {
+            runStatus.stringValue = "Finished in \(time)"
+        } else {
+            runStatus.stringValue = errorCount > 0 ? "Failed — \(errorCount) error\(errorCount == 1 ? "" : "s")" : "Failed (exit code \(status))"
+        }
+        updateRunChrome()
+        if let clone = pendingClone {
+            pendingClone = nil
+            if status == 0 { setWorkspace(clone) }
+        }
     }
 
     @objc func editRunCommand(_ sender: Any?) {
@@ -578,6 +663,40 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
                                        defaultValue: defaults.string(forKey: key) ?? "", confirm: "Save") else { return }
         let trimmed = command.trimmingCharacters(in: .whitespaces)
         trimmed.isEmpty ? defaults.removeObject(forKey: key) : defaults.set(trimmed, forKey: key)
+        updateRunChrome()
+    }
+
+    // MARK: Projects
+
+    @objc func newProject(_ sender: Any?) {
+        guard let window else { return }
+        NewProjectSheet { [weak self] template, name, location in
+            guard let self else { return }
+            do {
+                let folder = try ProjectTemplates.create(template, named: name, in: location)
+                if let command = template.runCommand { defaults.set(command, forKey: "runCommand:" + folder.path) }
+                setWorkspace(folder)
+                open(folder.appendingPathComponent(ProjectTemplates.mainFile(of: template, named: name)))
+            } catch {
+                Prompt.show("Couldn't create the project", message: error.localizedDescription)
+            }
+        }.show(in: window)
+    }
+
+    @objc func cloneRepository(_ sender: Any?) {
+        guard let address = Prompt.ask("Clone a repository", message: "Enter the repository URL, for example https://github.com/owner/project.git",
+                                       confirm: "Continue")?.trimmingCharacters(in: .whitespaces), !address.isEmpty else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Clone Here"
+        panel.message = "Choose the folder to put the repository in."
+        guard panel.runModal() == .OK, let parent = panel.url else { return }
+        var name = (address as NSString).lastPathComponent
+        if name.hasSuffix(".git") { name = String(name.dropLast(4)) }
+        pendingClone = parent.appendingPathComponent(name)
+        start("git clone --progress \(CommandTemplate.shellQuote(address))", in: parent)
     }
 
     @objc func stopRunning(_ sender: Any?) {
@@ -590,11 +709,32 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     @objc func focusConsoleInput(_ sender: Any?) {
         setConsoleVisible(true)
+        panel.show(.output)
         console.focusInput()
+    }
+
+    @objc func showOutput(_ sender: Any?) { showPanelTab(.output) }
+    @objc func showErrorList(_ sender: Any?) { showPanelTab(.errors) }
+    @objc func showTerminal(_ sender: Any?) { showPanelTab(.terminal) }
+
+    private func showPanelTab(_ tab: BottomPanel.Tab) {
+        setConsoleVisible(true)
+        panel.show(tab)
+    }
+
+    @objc func toggleExplorerSide(_ sender: Any?) {
+        defaults.set(!explorerOnRight, forKey: "explorerOnRight")
+        arrangeExplorer()
+        outerSplit.layoutSubtreeIfNeeded()
+        placeExplorerDivider()
+        if let toolbar = window?.toolbar, let index = toolbar.items.firstIndex(where: { $0.itemIdentifier == .files }) {
+            toolbar.items[index].image = NSImage(systemSymbolName: explorerOnRight ? "sidebar.right" : "sidebar.left", accessibilityDescription: "Explorer")
+        }
     }
 
     func stopAll() {
         runner.stop()
+        panel.terminal.stop()
     }
 
     // MARK: Validation
@@ -602,6 +742,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private func isEnabled(_ action: Selector?) -> Bool {
         switch action {
         case #selector(stopRunning(_:)): runner.isRunning
+        case #selector(runActiveFile(_:)): !isRunning
         case #selector(saveDocument(_:)), #selector(saveDocumentAs(_:)): current != nil
         case #selector(saveAllDocuments(_:)): documents.contains { $0.isDirty }
         case #selector(closeFolder(_:)), #selector(editRunCommand(_:)): workspaceURL != nil
@@ -612,7 +753,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleExplorer(_:)) { menuItem.title = explorer.isHidden ? "Show Explorer" : "Hide Explorer" }
-        if menuItem.action == #selector(toggleConsole(_:)) { menuItem.title = console.isHidden ? "Show Console" : "Hide Console" }
+        if menuItem.action == #selector(toggleConsole(_:)) { menuItem.title = panel.isHidden ? "Show Panel" : "Hide Panel" }
+        if menuItem.action == #selector(toggleExplorerSide(_:)) { menuItem.title = explorerOnRight ? "Move Explorer to Left" : "Move Explorer to Right" }
         return isEnabled(menuItem.action)
     }
 
@@ -628,7 +770,17 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     func windowWillClose(_ notification: Notification) {
         saveSession()
-        runner.stop()
+        stopAll()
+    }
+}
+
+/// The colored bar at the bottom of the window.
+final class StatusBar: NSView {
+    var color: NSColor = Theme.accent { didSet { needsDisplay = true } }
+
+    override func draw(_ dirtyRect: NSRect) {
+        color.setFill()
+        bounds.fill()
     }
 }
 

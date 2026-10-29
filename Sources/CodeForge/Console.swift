@@ -1,6 +1,6 @@
 import AppKit
 
-/// The output panel under the editor, with a field for typing input to the running program.
+/// The Output tab: program output, with a field for typing input to the running program.
 final class ConsoleView: NSView {
     enum Kind { case output, error, info, input }
 
@@ -19,13 +19,6 @@ final class ConsoleView: NSView {
         textView.textContainerInset = NSSize(width: 6, height: 6)
         scroll.borderType = .noBorder
 
-        let title = NSTextField(labelWithString: "CONSOLE")
-        title.font = .systemFont(ofSize: 11, weight: .semibold)
-        title.textColor = .secondaryLabelColor
-        let clear = FileTreeView.iconButton("trash", "Clear Console", #selector(clear(_:)), self)
-        let header = NSStackView(views: [title, NSView(), clear])
-        header.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 8)
-
         input.placeholderString = "Input for the running program — press Return to send"
         input.font = font
         input.isBordered = false
@@ -36,16 +29,12 @@ final class ConsoleView: NSView {
 
         let separator = NSBox()
         separator.boxType = .separator
-        for view in [header, scroll, separator, input] {
+        for view in [scroll, separator, input] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: topAnchor),
-            header.leadingAnchor.constraint(equalTo: leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: trailingAnchor),
-            header.heightAnchor.constraint(equalToConstant: 26),
-            scroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+            scroll.topAnchor.constraint(equalTo: topAnchor),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             separator.topAnchor.constraint(equalTo: scroll.bottomAnchor),
@@ -61,16 +50,18 @@ final class ConsoleView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
+        Theme.background.setFill()
         bounds.fill()
     }
+
+    var text: String { textView.string }
 
     func append(_ text: String, _ kind: Kind = .output) {
         guard let storage = textView.textStorage else { return }
         let color: NSColor = switch kind {
         case .output: Theme.text
         case .error: .systemRed
-        case .info: .secondaryLabelColor
+        case .info: Theme.gutterText
         case .input: .systemGreen
         }
         let clip = scroll.contentView

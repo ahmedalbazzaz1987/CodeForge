@@ -54,9 +54,9 @@ final class TabBarView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
+        Theme.chrome.setFill()
         bounds.fill()
-        NSColor.separatorColor.setFill()
+        Theme.separator.setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 }
@@ -128,10 +128,10 @@ private final class TabItemView: NSView {
         if isSelected {
             Theme.background.setFill()
             bounds.fill()
-            NSColor.controlAccentColor.setFill()
+            Theme.accent.setFill()
             NSRect(x: 0, y: bounds.maxY - 2, width: bounds.width, height: 2).fill()
         }
-        NSColor.separatorColor.setFill()
+        Theme.separator.setFill()
         NSRect(x: bounds.maxX - 1, y: 0, width: 1, height: bounds.height).fill()
     }
 

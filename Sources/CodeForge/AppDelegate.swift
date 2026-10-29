@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         windowController.showWindow(nil)
         NSApp.activate()
         Updater.shared.checkInBackgroundIfDue()
+        #if DEBUG
+        DevSnapshot.runIfRequested(windowController)
+        #endif
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -85,8 +88,10 @@ enum MainMenu {
         }
 
         main.addSubmenu("File") { menu in
+            menu.add("New Project…", #selector(WorkspaceWindowController.newProject(_:)), "n", [.command, .shift])
             menu.add("New File", #selector(WorkspaceWindowController.newDocument(_:)), "n")
             menu.add("Open…", #selector(WorkspaceWindowController.openDocument(_:)), "o")
+            menu.add("Clone Repository…", #selector(WorkspaceWindowController.cloneRepository(_:)))
             let recent = NSMenu(title: "Open Recent")
             recent.delegate = NSApp.delegate as? NSMenuDelegate
             menu.add("Open Recent", nil).submenu = recent
@@ -126,7 +131,11 @@ enum MainMenu {
 
         main.addSubmenu("View") { menu in
             menu.add("Hide Explorer", #selector(WorkspaceWindowController.toggleExplorer(_:)), "b")
-            menu.add("Hide Console", #selector(WorkspaceWindowController.toggleConsole(_:)), "y", [.command, .shift])
+            menu.add("Move Explorer to Left", #selector(WorkspaceWindowController.toggleExplorerSide(_:)))
+            menu.add("Hide Panel", #selector(WorkspaceWindowController.toggleConsole(_:)), "y", [.command, .shift])
+            menu.add("Output", #selector(WorkspaceWindowController.showOutput(_:)), "u", [.command, .shift])
+            menu.add("Error List", #selector(WorkspaceWindowController.showErrorList(_:)), "m", [.command, .shift])
+            menu.add("Terminal", #selector(WorkspaceWindowController.showTerminal(_:)), "`", .control)
             menu.addItem(.separator())
             menu.add("Bigger", #selector(WorkspaceWindowController.increaseFontSize(_:)), "+")
             menu.add("Smaller", #selector(WorkspaceWindowController.decreaseFontSize(_:)), "-")

@@ -53,3 +53,55 @@ final class CodeForgeKitTests: XCTestCase {
         XCTAssertGreaterThan(name, scattered ?? Int.min)
     }
 }
+
+final class DiagnosticsAndTemplatesTests: XCTestCase {
+    func testCompilerErrors() {
+        let output = """
+            main.c:5:9: error: use of undeclared identifier 'x'
+            /tmp/a.swift:3:1: warning: variable 'y' was never used
+            main.c:5:9: note: previous definition is here
+            ./main.go:7:2: undefined: fmt.Printn
+            Total: 55
+            """
+        let diagnostics = DiagnosticParser.parse(output)
+        XCTAssertEqual(diagnostics, [
+            Diagnostic(severity: .error, message: "use of undeclared identifier 'x'", file: "main.c", line: 5, column: 9),
+            Diagnostic(severity: .warning, message: "variable 'y' was never used", file: "/tmp/a.swift", line: 3, column: 1),
+            Diagnostic(severity: .error, message: "undefined: fmt.Printn", file: "./main.go", line: 7, column: 2),
+        ])
+    }
+
+    func testPythonTraceback() {
+        let output = """
+            Traceback (most recent call last):
+              File "/p/main.py", line 9, in <module>
+                main()
+              File "/p/main.py", line 4, in main
+                print(nmae)
+            NameError: name 'nmae' is not defined
+            """
+        XCTAssertEqual(DiagnosticParser.parse(output),
+                       [Diagnostic(severity: .error, message: "NameError: name 'nmae' is not defined", file: "/p/main.py", line: 4)])
+    }
+
+    func testRustNodeAndTypeScript() {
+        let rust = "error[E0425]: cannot find value `x` in this scope\n --> src/main.rs:2:20\n"
+        XCTAssertEqual(DiagnosticParser.parse(rust).first?.file, "src/main.rs")
+        let node = "/p/app.js:2\nconsole.log(y)\n        ^\n\nReferenceError: y is not defined\n    at Object.<anonymous> (/p/app.js:2:13)\n"
+        XCTAssertEqual(DiagnosticParser.parse(node), [Diagnostic(severity: .error, message: "ReferenceError: y is not defined", file: "/p/app.js", line: 2)])
+        let ts = "index.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.\n"
+        XCTAssertEqual(DiagnosticParser.parse(ts).first?.column, 7)
+    }
+
+    func testTemplatesCreateFiles() throws {
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        for template in ProjectTemplates.all {
+            let folder = try ProjectTemplates.create(template, named: "My App \(template.id)", in: parent)
+            let main = folder.appendingPathComponent(ProjectTemplates.mainFile(of: template, named: "My App \(template.id)"))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: main.path), template.id)
+            XCTAssertFalse(try String(contentsOf: main, encoding: .utf8).contains("{{"), template.id)
+        }
+        XCTAssertEqual(ProjectTemplates.identifier(for: "2nd try!"), "App2ndtry")
+    }
+}

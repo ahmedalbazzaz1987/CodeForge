@@ -132,6 +132,42 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
         return (line + 1, location - ruler.lineStart(line) + 1)
     }
 
+    /// Moves the cursor to a 1-based line and column and scrolls it into view.
+    func reveal(line: Int, column: Int?) {
+        let ns = textView.string as NSString
+        let start = ruler.lineStart(line - 1)
+        let lineRange = ns.lineRange(for: NSRange(location: min(start, ns.length), length: 0))
+        let location = min(start + max((column ?? 1) - 1, 0), NSMaxRange(lineRange))
+        textView.setSelectedRange(NSRange(location: min(location, ns.length), length: 0))
+        textView.scrollRangeToVisible(textView.selectedRange())
+        textView.window?.makeFirstResponder(textView)
+        if lineRange.length > 0 { textView.showFindIndicator(for: lineRange) }
+    }
+
+    /// Underlines lines with errors (red) and warnings (yellow) until the next edit.
+    func setDiagnostics(_ diagnostics: [Diagnostic]) {
+        guard let layoutManager = textView.layoutManager else { return }
+        let ns = textView.string as NSString
+        let all = NSRange(location: 0, length: ns.length)
+        layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: all)
+        layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: all)
+        textView.toolTip = nil
+        for diagnostic in diagnostics {
+            var range = ns.lineRange(for: NSRange(location: min(ruler.lineStart(diagnostic.line - 1), ns.length), length: 0))
+            // Skip leading indentation and the line break.
+            while range.length > 0, [0x20, 0x09].contains(ns.character(at: range.location)) { range.location += 1; range.length -= 1 }
+            while range.length > 0, [0x0A, 0x0D].contains(ns.character(at: NSMaxRange(range) - 1)) { range.length -= 1 }
+            guard range.length > 0 else { continue }
+            layoutManager.addTemporaryAttributes([
+                .underlineStyle: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
+                .underlineColor: diagnostic.severity == .error ? Theme.errorRed : Theme.warningYellow,
+            ], forCharacterRange: range)
+        }
+        hasDiagnostics = !diagnostics.isEmpty
+    }
+
+    private var hasDiagnostics = false
+
     // MARK: Highlighting
 
     /// Small files are highlighted synchronously on every edit; large ones on a background queue after a pause.
@@ -167,6 +203,7 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         isDirty = true
+        if hasDiagnostics { setDiagnostics([]) }
         rehighlight()
     }
 

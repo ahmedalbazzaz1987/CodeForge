@@ -1,18 +1,26 @@
 # CodeForge
 
-A small, fast, native code editor for macOS, in the spirit of Visual Studio Code: a file explorer, tabs, syntax
-highlighting for more than 20 languages, and a **Run** button with a built-in console. The whole app is about
-**1 MB**, has no third-party dependencies, and updates itself from GitHub Releases.
+A small, fast, native IDE for macOS, inspired by Visual Studio: a Start page with project templates, a Solution
+Explorer-style file tree, editor tabs, an **Output / Error List / Terminal** panel, and a green **Start** button that
+runs your code. The whole app is about **1 MB**, has no third-party dependencies, and updates itself from GitHub
+Releases.
+
+![CodeForge in dark mode, showing an error from a Python program in the Error List](docs/screenshot.png)
 
 - **Native and light.** Written in Swift with AppKit. It starts instantly and runs on Apple Silicon and Intel Macs
   with macOS 14 or later.
-- **Many languages.** Swift, Python, JavaScript, TypeScript, C, C++, Objective-C, Java, Kotlin, C#, Go, Rust, Ruby,
-  PHP, Shell, Lua, SQL, HTML/XML, CSS, JSON, YAML, TOML, Markdown, Makefile and Dockerfile.
-- **Run anything.** Press ⌘R to run the current file with the right tool (`python3`, `node`, `clang`, `swift`,
-  `go run`, …). Output streams into the console, and you can type input for programs that ask for it. For a whole
-  project, set a run command such as `npm start`, `swift run` or `make`.
-- **Editor comforts.** Line numbers, current-line highlight, auto-indent, bracket-aware Return, toggle comment,
-  indent/outdent, find and replace, go to line, Quick Open (⌘P), and light and dark mode.
+- **Visual Studio-style layout.** Light and dark themes, explorer on the right, docked bottom panel and a colored
+  status bar (blue when ready, orange while running).
+- **Start fast.** File ▸ New Project… creates a ready-to-run project for Python, C, C++, Swift, Node.js, TypeScript,
+  web pages, Go, Rust or Java. You can also clone a Git repository straight from the Start page.
+- **Many languages.** Syntax highlighting for Swift, Python, JavaScript, TypeScript, C, C++, Objective-C, Java, Kotlin,
+  C#, Go, Rust, Ruby, PHP, Shell, Lua, SQL, HTML/XML, CSS, JSON, YAML, TOML, Markdown, Makefile and Dockerfile.
+- **Run, then fix.** Press ⌘R to run. Output streams into the Output tab, and you can type input for programs that ask
+  for it. Compiler and runtime errors appear in the **Error List**. Double-click one to jump to the line, which is
+  underlined in the editor.
+- **Built-in terminal.** Run `git`, `npm`, `pip` and other commands in the project folder.
+- **Editor comforts.** Line numbers, current-line highlight, auto-indent, toggle comment, indent/outdent, find and
+  replace, go to line and Quick Open (⌘P).
 - **Self-updating.** CodeForge checks GitHub Releases once a day and can install a new version and relaunch.
 
 ## Install
@@ -40,13 +48,15 @@ open dist/CodeForge.app
 
 | Action | Shortcut |
 | --- | --- |
+| New project | ⇧⌘N |
 | Open a file or folder | ⌘O |
 | Quick Open (find a file by name) | ⌘P |
 | New file / Save / Save All | ⌘N / ⌘S / ⌥⌘S |
 | Close tab / next and previous tab | ⌘W / ⇧⌘] and ⇧⌘[ |
 | Run / Stop | ⌘R / ⌘. |
 | Set the project's run command | ⇧⌘R |
-| Show or hide the explorer / console | ⌘B / ⇧⌘Y |
+| Show or hide the explorer / bottom panel | ⌘B / ⇧⌘Y |
+| Output / Error List / Terminal | ⇧⌘U / ⇧⌘M / ⌃` |
 | Find / Find and Replace | ⌘F / ⌥⌘F |
 | Go to line | ⌘L |
 | Toggle comment / indent / outdent | ⌘/ / ⌘] / ⌘[ |
@@ -91,8 +101,8 @@ To sign with an Apple Developer ID instead of the default ad-hoc signature, pass
 ## Project layout
 
 ```
-Sources/CodeForgeKit/   Languages, tokenizer, run-command templates, versions, fuzzy matching (no UI; unit-tested)
-Sources/CodeForge/      The AppKit app: window, editor, explorer, tabs, console, Quick Open, updater
+Sources/CodeForgeKit/   Languages, tokenizer, error parsing, project templates, run commands, versions (no UI; unit-tested)
+Sources/CodeForge/      The AppKit app: window, editor, explorer, tabs, bottom panel, Start page, Quick Open, updater
 Tests/                  Unit tests for CodeForgeKit
 scripts/                build-app.sh, release.sh, make-icon.swift
 ```
