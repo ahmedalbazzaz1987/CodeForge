@@ -15,6 +15,8 @@ Releases.
   web pages, Go, Rust or Java. You can also clone a Git repository straight from the Start page.
 - **Many languages.** Syntax highlighting for Swift, Python, JavaScript, TypeScript, C, C++, Objective-C, Java, Kotlin,
   C#, Go, Rust, Ruby, PHP, Shell, Lua, SQL, HTML/XML, CSS, JSON, YAML, TOML, Markdown, Makefile and Dockerfile.
+- **IntelliSense.** Completions, quick info on hover, Go to Definition (F12 / ⌘-click), Find All References (⇧F12),
+  Rename (F2) and live error squiggles, powered by standard language servers.
 - **Run, then fix.** Press ⌘R to run. Output streams into the Output tab, and you can type input for programs that ask
   for it. Compiler and runtime errors appear in the **Error List**. Double-click one to jump to the line, which is
   underlined in the editor.
@@ -60,10 +62,28 @@ open dist/CodeForge.app
 | Find / Find and Replace | ⌘F / ⌥⌘F |
 | Go to line | ⌘L |
 | Toggle comment / indent / outdent | ⌘/ / ⌘] / ⌘[ |
+| Show completions | ⌃Space or Esc |
+| Go to Definition / Find All References / Rename | F12 or ⌘-click / ⇧F12 / F2 |
 | Bigger / smaller text | ⌘+ / ⌘- |
 
 Right-click in the explorer to create, rename, reveal or trash files, or to open a Terminal in that folder. The
 language menu in the status bar changes how the current file is highlighted and run.
+
+### IntelliSense
+
+CodeForge talks to standard language servers. The status bar shows which one is active for the current file.
+
+| Language | Server | How to get it |
+| --- | --- | --- |
+| Swift | SourceKit-LSP | Included with Xcode |
+| C, C++, Objective-C | clangd | Included with Xcode |
+| Python | Pyright | Click **Install Python IntelliSense…** in the status bar (needs Node.js) |
+| JavaScript, TypeScript | TypeScript 7 (`tsc --lsp`) | Click **Install … IntelliSense…** in the status bar (needs Node.js) |
+| Go | gopls | `go install golang.org/x/tools/gopls@latest` |
+| Rust | rust-analyzer | `rustup component add rust-analyzer` |
+
+Servers that CodeForge installs live in `~/Library/Application Support/<bundle id>/LanguageServers`. Find All
+References in Swift needs a built Swift package (the index comes from the build).
 
 ### How files run
 
@@ -101,8 +121,8 @@ To sign with an Apple Developer ID instead of the default ad-hoc signature, pass
 ## Project layout
 
 ```
-Sources/CodeForgeKit/   Languages, tokenizer, error parsing, project templates, run commands, versions (no UI; unit-tested)
-Sources/CodeForge/      The AppKit app: window, editor, explorer, tabs, bottom panel, Start page, Quick Open, updater
+Sources/CodeForgeKit/   Languages, tokenizer, error parsing, project templates, language-server protocol helpers (no UI; unit-tested)
+Sources/CodeForge/      The AppKit app: window, editor, IntelliSense, explorer, tabs, bottom panel, Start page, updater
 Tests/                  Unit tests for CodeForgeKit
 scripts/                build-app.sh, release.sh, make-icon.swift
 ```

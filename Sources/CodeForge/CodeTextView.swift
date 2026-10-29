@@ -7,6 +7,8 @@ final class CodeTextView: NSTextView {
     var lineComment: String?
     var blockComment: (open: String, close: String)?
     var indentAfterColon = false
+    weak var assistant: CodeTextViewAssistant?
+    private var hoverTimer: Timer?
 
     func configure(for language: Language) {
         indentUnit = language.indentWithTabs ? "\t" : "    "
@@ -66,6 +68,13 @@ final class CodeTextView: NSTextView {
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        insertTextWithoutAssistant(string, replacementRange: replacementRange)
+        if let text = (string as? String) ?? (string as? NSAttributedString)?.string {
+            assistant?.textView(self, didInsert: text)
+        }
+    }
+
+    private func insertTextWithoutAssistant(_ string: Any, replacementRange: NSRange) {
         // Typing a closing brace on a blank line removes one level of indentation.
         if let text = string as? String, text == "}" {
             let ns = self.string as NSString
@@ -78,6 +87,81 @@ final class CodeTextView: NSTextView {
             }
         }
         super.insertText(string, replacementRange: replacementRange)
+    }
+
+    override func deleteBackward(_ sender: Any?) {
+        super.deleteBackward(sender)
+        assistant?.textViewDidDeleteBackward(self)
+    }
+
+    override func doCommand(by selector: Selector) {
+        if assistant?.textView(self, handle: selector) == true { return }
+        super.doCommand(by: selector)
+    }
+
+    /// Escape and Edit ▸ Show Completions (⌃Space) open the IntelliSense list.
+    override func complete(_ sender: Any?) {
+        if let assistant { assistant.textViewRequestedCompletion(self) } else { super.complete(sender) }
+    }
+
+    @objc func showCompletions(_ sender: Any?) {
+        assistant?.textViewRequestedCompletion(self)
+    }
+
+    // MARK: Hover and ⌘-click
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if !trackingAreas.contains(where: { $0.owner === self && $0.options.contains(.mouseMoved) }) {
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        hoverTimer?.invalidate()
+        assistant?.textViewEndedHover(self)
+        let point = convert(event.locationInWindow, from: nil)
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            guard let self, let index = characterIndex(at: point) else { return }
+            assistant?.textView(self, hoverAt: index)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hoverTimer?.invalidate()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        hoverTimer?.invalidate()
+        assistant?.textViewEndedHover(self)
+        if event.modifierFlags.contains(.command), let index = characterIndex(at: convert(event.locationInWindow, from: nil)) {
+            setSelectedRange(NSRange(location: index, length: 0))
+            assistant?.textView(self, goToDefinitionAt: index)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        hoverTimer?.invalidate()
+        assistant?.textViewEndedHover(self)
+        super.keyDown(with: event)
+    }
+
+    /// The character under a point, or nil when the point is past the end of a line.
+    private func characterIndex(at point: NSPoint) -> Int? {
+        guard let layoutManager, let textContainer else { return nil }
+        let inContainer = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        var fraction: CGFloat = 0
+        let glyph = layoutManager.glyphIndex(for: inContainer, in: textContainer, fractionOfDistanceThroughGlyph: &fraction)
+        guard glyph < layoutManager.numberOfGlyphs else { return nil }
+        let rect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        guard rect.insetBy(dx: -1, dy: -1).contains(inContainer) else { return nil }
+        let index = layoutManager.characterIndexForGlyph(at: glyph)
+        let character = (string as NSString).character(at: index)
+        return character == 10 || character == 32 ? nil : index
     }
 
     override func insertTab(_ sender: Any?) {

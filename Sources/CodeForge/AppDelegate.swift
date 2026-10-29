@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 }
 
 enum MainMenu {
+    static func functionKey(_ key: Int) -> String { String(Character(UnicodeScalar(UInt16(key))!)) }
+
     static func build() -> NSMenu {
         let main = NSMenu()
 
@@ -124,6 +126,12 @@ enum MainMenu {
             menu.add("Find", nil).submenu = find
             menu.addItem(.separator())
             menu.add("Go to Line…", #selector(CodeTextView.goToLine(_:)), "l")
+            menu.addItem(.separator())
+            menu.add("Show Completions", #selector(CodeTextView.showCompletions(_:)), " ", .control)
+            menu.add("Go to Definition", #selector(WorkspaceWindowController.goToDefinition(_:)), MainMenu.functionKey(NSF12FunctionKey), [])
+            menu.add("Find All References", #selector(WorkspaceWindowController.findAllReferences(_:)), MainMenu.functionKey(NSF12FunctionKey), .shift)
+            menu.add("Rename…", #selector(WorkspaceWindowController.renameSymbol(_:)), MainMenu.functionKey(NSF2FunctionKey), [])
+            menu.addItem(.separator())
             menu.add("Toggle Comment", #selector(CodeTextView.toggleComment(_:)), "/")
             menu.add("Indent", #selector(CodeTextView.indentSelection(_:)), "]")
             menu.add("Outdent", #selector(CodeTextView.outdentSelection(_:)), "[")

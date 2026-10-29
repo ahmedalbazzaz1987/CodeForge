@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+IntelliSense, powered by standard language servers.
+
+- **Completions** as you type (and with ⌃Space or Esc), with kind icons and type details.
+- **Quick info** when you rest the mouse on a symbol, including the error or warning under it.
+- **Go to Definition** (F12 or ⌘-click), **Find All References** (⇧F12, results in the new References tab) and **Rename** (F2) across files.
+- **Live errors and warnings** while you type: exact squiggles in the editor and entries in the Error List, before you run anything.
+- Works out of the box for Swift (SourceKit-LSP) and C, C++ and Objective-C (clangd), using Xcode's tools.
+- Python (Pyright) and JavaScript/TypeScript (TypeScript 7) are one click away: the status bar offers to install them into CodeForge's own folder. Go (gopls) and Rust (rust-analyzer) are used when installed.
+
 ## 0.2.0
 
 A Visual Studio-style look and layout.

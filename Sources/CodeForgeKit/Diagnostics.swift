@@ -10,13 +10,18 @@ public struct Diagnostic: Equatable, Hashable, Sendable {
     public let file: String
     public let line: Int
     public let column: Int?
+    /// Where the problem ends, when the tool reports it (1-based, end exclusive).
+    public let endLine: Int?
+    public let endColumn: Int?
 
-    public init(severity: Severity, message: String, file: String, line: Int, column: Int? = nil) {
+    public init(severity: Severity, message: String, file: String, line: Int, column: Int? = nil, endLine: Int? = nil, endColumn: Int? = nil) {
         self.severity = severity
         self.message = message
         self.file = file
         self.line = line
         self.column = column
+        self.endLine = endLine
+        self.endColumn = endColumn
     }
 
     public func url(relativeTo folder: URL) -> URL {

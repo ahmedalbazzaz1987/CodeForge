@@ -7,18 +7,39 @@ import AppKit
 ///   CF_RUN=1                   press Run first and wait for it
 ///   CF_ACTION=selector:        send one more action to the window controller first (e.g. showTerminal:)
 ///   CF_TERMINAL="ls"           type a command into the Terminal tab first
+///   CF_LSP_PROBE=word          print completion, hover and definition results for the first "word" in the open file
 enum DevSnapshot {
     static func runIfRequested(_ controller: WorkspaceWindowController) {
         let env = ProcessInfo.processInfo.environment
+        if let word = env["CF_LSP_PROBE"] { probe(controller, word: word) }
         guard let path = env["CF_SNAPSHOT"] else { return }
         if env["CF_DARK"] != nil { NSApp.appearance = NSAppearance(named: .darkAqua) }
-        var delay = 1.5
+        var delay = Double(env["CF_DELAY"] ?? "") ?? 1.5
         if env["CF_RUN"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { controller.runActiveFile(nil) }
             delay = 5
         }
         if let action = env["CF_ACTION"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { _ = controller.perform(NSSelectorFromString(action), with: nil) }
+        }
+        if let text = env["CF_COMPLETE"] {
+            // Put the cursor after `text` and open the completion list.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                guard let textView = find(controller.window!.contentView!, CodeTextView.self) else { return }
+                let range = (textView.string as NSString).range(of: text)
+                textView.setSelectedRange(NSRange(location: NSMaxRange(range), length: 0))
+                textView.showCompletions(nil)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
+                guard let popup = NSApp.windows.first(where: { $0 is NSPanel && $0.isVisible }), let view = popup.contentView else {
+                    return print("SNAPSHOT: no completion list")
+                }
+                let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path + ".popup.png"))
+                print("SNAPSHOT: popup at", popup.frame, "window", controller.window!.frame)
+            }
+            delay = max(delay, 5)
         }
         if let command = env["CF_TERMINAL"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
@@ -34,6 +55,28 @@ enum DevSnapshot {
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
             exit(0)
+        }
+    }
+
+    private static func probe(_ controller: WorkspaceWindowController, word: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            guard let textView = find(controller.window!.contentView!, CodeTextView.self),
+                  let session = controller.documentForProbe(textView)?.session else { print("PROBE: no session"); exit(1) }
+            let ns = textView.string as NSString
+            let found = ns.range(of: word)
+            print("PROBE: server \(session.server.spec.name), word at \(found.location)")
+            session.hover(at: found.location + 1) { print("PROBE hover:", $0 ?? "nil") }
+            session.definition(at: found.location + 1) { print("PROBE definition:", $0.map { "\($0.url.lastPathComponent):\($0.line):\($0.column)" }) }
+            session.references(at: found.location + 1) { print("PROBE references:", $0.count) }
+            // Complete after "word." on the last line.
+            let dotted = ns.range(of: word + ".")
+            session.completion(at: NSMaxRange(dotted)) { items in
+                print("PROBE completion count:", items.count, "by sortText:", items.sorted { $0.sortText < $1.sortText }.prefix(6).map { "\($0.label)@\($0.replaceStart ?? -1)" })
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                print("PROBE diagnostics:", controller.diagnosticsForProbe())
+                exit(0)
+            }
         }
     }
 

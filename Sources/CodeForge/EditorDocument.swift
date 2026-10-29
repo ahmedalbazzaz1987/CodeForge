@@ -22,6 +22,11 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     private var tokenizer: Tokenizer
     private var highlightGeneration = 0
 
+    /// The language server connection, when IntelliSense is available for this file.
+    var session: LanguageSession? {
+        willSet { session?.close() }
+    }
+    private var diagnosticRanges: [(range: NSRange, message: String)] = []
     var onStateChange: (() -> Void)?
     var onSelectionChange: (() -> Void)?
 
@@ -123,6 +128,7 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
         guard let url else { return }
         try textView.string.write(to: url, atomically: true, encoding: .utf8)
         isDirty = false
+        session?.saved()
     }
 
     /// 1-based line and column of the insertion point.
@@ -151,19 +157,51 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
         let all = NSRange(location: 0, length: ns.length)
         layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: all)
         layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: all)
-        textView.toolTip = nil
+        diagnosticRanges = []
+        let lines = TextLines(textView.string)
         for diagnostic in diagnostics {
-            var range = ns.lineRange(for: NSRange(location: min(ruler.lineStart(diagnostic.line - 1), ns.length), length: 0))
-            // Skip leading indentation and the line break.
-            while range.length > 0, [0x20, 0x09].contains(ns.character(at: range.location)) { range.location += 1; range.length -= 1 }
-            while range.length > 0, [0x0A, 0x0D].contains(ns.character(at: NSMaxRange(range) - 1)) { range.length -= 1 }
-            guard range.length > 0 else { continue }
+            var range: NSRange
+            if let column = diagnostic.column, let endLine = diagnostic.endLine, let endColumn = diagnostic.endColumn {
+                // An exact range from a language server; widen empty ranges to one character.
+                let start = lines.offset(line: diagnostic.line - 1, character: column - 1)
+                let end = lines.offset(line: endLine - 1, character: endColumn - 1)
+                range = NSRange(location: start, length: max(end - start, start < ns.length ? 1 : 0))
+            } else {
+                range = ns.lineRange(for: NSRange(location: min(ruler.lineStart(diagnostic.line - 1), ns.length), length: 0))
+                // Skip leading indentation and the line break.
+                while range.length > 0, [0x20, 0x09].contains(ns.character(at: range.location)) { range.location += 1; range.length -= 1 }
+                while range.length > 0, [0x0A, 0x0D].contains(ns.character(at: NSMaxRange(range) - 1)) { range.length -= 1 }
+            }
+            guard range.length > 0, NSMaxRange(range) <= ns.length else { continue }
+            diagnosticRanges.append((range, (diagnostic.severity == .error ? "Error: " : "Warning: ") + diagnostic.message))
             layoutManager.addTemporaryAttributes([
                 .underlineStyle: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
                 .underlineColor: diagnostic.severity == .error ? Theme.errorRed : Theme.warningYellow,
             ], forCharacterRange: range)
         }
         hasDiagnostics = !diagnostics.isEmpty
+    }
+
+    /// The error or warning message under a character, for hover info.
+    func diagnosticMessage(at index: Int) -> String? {
+        let messages = diagnosticRanges.filter { NSLocationInRange(index, $0.range) }.map(\.message)
+        return messages.isEmpty ? nil : messages.joined(separator: "\n")
+    }
+
+    /// Applies language-server text edits as one undoable change.
+    func apply(_ edits: [(range: [String: Any], text: String)]) {
+        let lines = TextLines(textView.string)
+        let resolved = edits.compactMap { IntelliSense.resolve($0, lines) }.sorted { $0.0 > $1.0 }
+        guard !resolved.isEmpty else { return }
+        textView.undoManager?.beginUndoGrouping()
+        for (start, end, text) in resolved {
+            let range = NSRange(location: start, length: end - start)
+            if textView.shouldChangeText(in: range, replacementString: text) {
+                textView.textStorage?.replaceCharacters(in: range, with: text)
+                textView.didChangeText()
+            }
+        }
+        textView.undoManager?.endUndoGrouping()
     }
 
     private var hasDiagnostics = false
@@ -204,6 +242,7 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         isDirty = true
         if hasDiagnostics { setDiagnostics([]) }
+        session?.textChanged()
         rehighlight()
     }
 

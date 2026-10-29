@@ -4,12 +4,13 @@ import CodeForgeKit
 /// The docked panel under the editor: Output, Error List and Terminal tabs.
 final class BottomPanel: NSView {
     enum Tab: Int, CaseIterable {
-        case output, errors, terminal
-        var title: String { ["Output", "Error List", "Terminal"][rawValue] }
+        case output, errors, references, terminal
+        var title: String { ["Output", "Error List", "References", "Terminal"][rawValue] }
     }
 
     let output = ConsoleView()
     let errors = ErrorListView()
+    let references = ReferencesView()
     let terminal = TerminalView()
     var onHide: (() -> Void)?
     private(set) var selected: Tab = .output
@@ -53,7 +54,7 @@ final class BottomPanel: NSView {
     func show(_ tab: Tab) {
         selected = tab
         content.subviews.forEach { $0.removeFromSuperview() }
-        let view: NSView = [output, errors, terminal][tab.rawValue]
+        let view: NSView = [output, errors, references, terminal][tab.rawValue]
         view.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(view)
         NSLayoutConstraint.activate([
@@ -72,6 +73,7 @@ final class BottomPanel: NSView {
             let tab = Tab(rawValue: button.tag)!
             var title = tab.title
             if tab == .errors, errors.count > 0 { title += "  \(errors.count)" }
+            if tab == .references, references.count > 0 { title += "  \(references.count)" }
             button.attributedTitle = NSAttributedString(string: title, attributes: [
                 .font: NSFont.systemFont(ofSize: 11, weight: tab == selected ? .semibold : .regular),
                 .foregroundColor: tab == selected ? NSColor.labelColor : NSColor.secondaryLabelColor,
@@ -86,6 +88,7 @@ final class BottomPanel: NSView {
         switch selected {
         case .output: output.clear(nil)
         case .errors: errors.set([], folder: nil)
+        case .references: references.set(title: "", [])
         case .terminal: terminal.clear()
         }
         updateTabTitles()
@@ -191,6 +194,91 @@ final class ErrorListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
         guard diagnostics.indices.contains(row), let folder else { return }
         onOpen?(diagnostics[row].url(relativeTo: folder), diagnostics[row])
+    }
+}
+
+/// The References tab: results of Find All References. Double-click to go there.
+final class ReferencesView: NSView, NSTableViewDataSource, NSTableViewDelegate {
+    var onOpen: ((URL, Int, Int) -> Void)?
+    private var rows: [(location: LanguageSession.Location, preview: String)] = []
+    private let table = NSTableView()
+    private let summary = NSTextField(labelWithString: "Use Find All References (⇧F12) on a symbol.")
+
+    var count: Int { rows.count }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        for (id, title, width) in [("file", "File", 180.0), ("line", "Line", 50.0), ("preview", "Code", 600.0)] {
+            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
+            column.title = title
+            column.width = width
+            table.addTableColumn(column)
+        }
+        table.style = .plain
+        table.rowHeight = 20
+        table.usesAlternatingRowBackgroundColors = true
+        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        table.dataSource = self
+        table.delegate = self
+        table.target = self
+        table.doubleAction = #selector(openSelected)
+        let scroll = NSScrollView()
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+        summary.textColor = .secondaryLabelColor
+        summary.font = .systemFont(ofSize: 11)
+        for view in [summary, scroll] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            summary.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            summary.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            scroll.topAnchor.constraint(equalTo: summary.bottomAnchor, constant: 4),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func set(title: String, _ locations: [LanguageSession.Location]) {
+        var cache: [URL: [String]] = [:]
+        rows = locations.map { location in
+            let lines = cache[location.url] ?? (try? String(contentsOf: location.url, encoding: .utf8))?.components(separatedBy: "\n") ?? []
+            cache[location.url] = lines
+            let preview = lines.indices.contains(location.line - 1) ? lines[location.line - 1].trimmingCharacters(in: .whitespaces) : ""
+            return (location, preview)
+        }
+        let files = Set(locations.map(\.url)).count
+        summary.stringValue = title.isEmpty ? "Use Find All References (⇧F12) on a symbol."
+            : "\(locations.count) reference\(locations.count == 1 ? "" : "s") to “\(title)” in \(files) file\(files == 1 ? "" : "s")"
+        table.reloadData()
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
+
+    func tableView(_ tableView: NSTableView, viewFor column: NSTableColumn?, row: Int) -> NSView? {
+        let item = rows[row]
+        let text: String
+        switch column?.identifier.rawValue {
+        case "file": text = item.location.url.lastPathComponent
+        case "line": text = "\(item.location.line)"
+        default: text = item.preview
+        }
+        let field = NSTextField(labelWithString: text)
+        field.font = column?.identifier.rawValue == "preview" ? .monospacedSystemFont(ofSize: 11.5, weight: .regular) : .systemFont(ofSize: 12)
+        field.lineBreakMode = .byTruncatingTail
+        field.toolTip = item.location.url.path
+        return field
+    }
+
+    @objc private func openSelected() {
+        let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
+        guard rows.indices.contains(row) else { return }
+        let location = rows[row].location
+        onOpen?(location.url, location.line, location.column)
     }
 }
 

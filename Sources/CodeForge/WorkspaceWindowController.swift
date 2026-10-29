@@ -34,6 +34,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private let cursorStatus = NSTextField(labelWithString: "")
     private let languageMenu = NSPopUpButton()
     private let runner = Runner()
+    private let intelliSense = IntelliSense()
+    private let intelliButton = NSButton()
+    private var runDiagnostics: [Diagnostic] = []
+    private var liveDiagnostics: [URL: [Diagnostic]] = [:]
+    private var pendingInstall: LanguageServerSpec?
     private var untitledCount = 0
     private var isRunning = false
     private var runFolder: URL?
@@ -113,7 +118,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         languageMenu.target = self
         languageMenu.action = #selector(languageChosen(_:))
         let status = statusBar
-        let items = NSStackView(views: [runStatus, NSView(), cursorStatus, languageMenu])
+        intelliButton.isBordered = false
+        intelliButton.font = .systemFont(ofSize: 11)
+        intelliButton.contentTintColor = .white
+        intelliButton.target = self
+        intelliButton.action = #selector(intelliButtonClicked(_:))
+        let items = NSStackView(views: [runStatus, NSView(), intelliButton, cursorStatus, languageMenu])
         items.spacing = 14
         items.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 6)
         items.translatesAutoresizingMaskIntoConstraints = false
@@ -277,6 +287,19 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         runner.onOutput = { [weak self] text, kind in self?.console.append(text, kind) }
         panel.onHide = { [weak self] in self?.setConsoleVisible(false) }
+        panel.references.onOpen = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
+        intelliSense.document = { [weak self] textView in self?.documents.first { $0.textView === textView } }
+        intelliSense.onOpenLocation = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
+        intelliSense.onStatus = { [weak self] in self?.runStatus.stringValue = $0 }
+        intelliSense.onReferences = { [weak self] word, locations in
+            guard let self else { return }
+            panel.references.set(title: word, locations)
+            showPanelTab(.references)
+        }
+        LanguageServerManager.shared.onDiagnostics = { [weak self] url, diagnostics in
+            self?.liveDiagnostics[url.standardizedFileURL] = diagnostics
+            self?.refreshDiagnostics()
+        }
         panel.errors.onOpen = { [weak self] url, diagnostic in self?.open(url, line: diagnostic.line, column: diagnostic.column) }
         startPage.onOpenRecent = { [weak self] in self?.open($0) }
         startPage.onNewProject = { [weak self] in self?.newProject(nil) }
@@ -324,6 +347,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     func setWorkspace(_ url: URL?) {
         workspaceURL = url
         explorer.setRoot(url)
+        documents.forEach(attachLanguageServer)
         panel.terminal.directory = url ?? FileManager.default.homeDirectoryForCurrentUser
         if let url {
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
@@ -340,7 +364,18 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             if untitledCount > 1 { name += " \(untitledCount)" }
         }
         let document = EditorDocument(url: url, text: text, fontSize: fontSize, untitledName: name)
-        document.onStateChange = { [weak self] in self?.refreshChrome() }
+        document.textView.assistant = intelliSense
+        document.onStateChange = { [weak self, weak document] in
+            guard let self, let document else { return }
+            // A new file name or language may need a different language server.
+            if document.session?.url != document.url?.standardizedFileURL
+                || document.session.map({ !$0.server.spec.languages.contains(document.language.id) }) == true
+                || (document.session == nil && document.url != nil && !triedSessions.contains(ObjectIdentifier(document))) {
+                attachLanguageServer(document)
+            }
+            refreshChrome()
+        }
+        attachLanguageServer(document)
         document.onSelectionChange = { [weak self, weak document] in
             if document === self?.current { self?.updateCursorStatus() }
         }
@@ -367,11 +402,40 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         refreshChrome()
     }
 
+    private var triedSessions = Set<ObjectIdentifier>()
+
+    /// Connects a document to its language server for IntelliSense, if one is installed.
+    private func attachLanguageServer(_ document: EditorDocument) {
+        triedSessions.insert(ObjectIdentifier(document))
+        guard let url = document.url?.standardizedFileURL else { document.session = nil; return }
+        let root = workspaceURL.flatMap { url.path.hasPrefix($0.path + "/") ? $0 : nil } ?? url.deletingLastPathComponent()
+        guard let server = LanguageServerManager.shared.server(for: document.language, root: root) else {
+            document.session = nil
+            return
+        }
+        if document.session?.server === server, document.session?.url == url { return }
+        document.session = LanguageSession(document: document, server: server, url: url)
+    }
+
+    /// Shows build/run errors and live language-server errors together.
+    private func refreshDiagnostics() {
+        let live = liveDiagnostics.values.flatMap { $0 }
+        panel.errors.set(runDiagnostics + live, folder: runFolder ?? workspaceURL ?? FileManager.default.homeDirectoryForCurrentUser)
+        panel.updateTabTitles()
+        let folder = runFolder ?? workspaceURL ?? FileManager.default.homeDirectoryForCurrentUser
+        for document in documents {
+            guard let url = document.url?.standardizedFileURL else { continue }
+            let fromRun = runDiagnostics.filter { $0.url(relativeTo: folder).standardizedFileURL == url }
+            document.setDiagnostics(fromRun + (liveDiagnostics[url] ?? []))
+        }
+    }
+
     /// Returns false if the user cancelled.
     @discardableResult
     private func closeDocument(at index: Int) -> Bool {
         guard documents.indices.contains(index) else { return true }
         guard confirmDiscard(documents[index]) else { return false }
+        documents[index].session = nil
         documents.remove(at: index)
         if index < selectedIndex || selectedIndex >= documents.count { selectedIndex -= 1 }
         select(selectedIndex)
@@ -447,6 +511,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             languageMenu.select(item)
         }
         updateCursorStatus()
+        updateIntelliSenseStatus()
         updateRunChrome()
     }
 
@@ -457,6 +522,52 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         startButton.isEnabled = !isRunning && (custom != nil || current != nil)
         statusBar.color = isRunning ? Theme.statusBusy : (workspaceURL == nil ? Theme.statusIdle : Theme.accent)
         window?.toolbar?.validateVisibleItems()
+    }
+
+    /// "IntelliSense: SourceKit-LSP", or an offer to install the server for this language.
+    private func updateIntelliSenseStatus() {
+        guard let current, let spec = LanguageServerSpecs.spec(forLanguage: current.language.id) else {
+            intelliButton.isHidden = true
+            return
+        }
+        intelliButton.isHidden = false
+        if current.session != nil {
+            intelliButton.title = "IntelliSense: \(spec.name)"
+            intelliButton.toolTip = "Completions (⌃Space), hover info, Go to Definition (F12), Find All References (⇧F12), Rename (F2)"
+        } else if current.url == nil {
+            intelliButton.title = "IntelliSense: save the file first"
+            intelliButton.toolTip = nil
+        } else if LanguageServerManager.shared.installCommand(for: spec) != nil {
+            intelliButton.title = "Install \(current.language.name) IntelliSense…"
+            intelliButton.toolTip = "Installs \(spec.name) into CodeForge's own folder"
+        } else {
+            intelliButton.title = "IntelliSense: \(spec.name) not found"
+            intelliButton.toolTip = spec.installHint
+        }
+    }
+
+    @objc private func intelliButtonClicked(_ sender: Any?) {
+        guard let current, let spec = LanguageServerSpecs.spec(forLanguage: current.language.id), current.session == nil else { return }
+        guard let command = LanguageServerManager.shared.installCommand(for: spec) else {
+            return Prompt.show("\(spec.name) isn't installed", message: spec.installHint, style: .informational)
+        }
+        guard Prompt.confirm("Install \(spec.name)?", message: "CodeForge will run npm to download \(spec.npmPackages.joined(separator: ", ")) "
+                             + "into its own folder (about 50 MB). You need Node.js (brew install node).", button: "Install") else { return }
+        pendingInstall = spec
+        start(command, in: FileManager.default.homeDirectoryForCurrentUser)
+    }
+
+    @objc func goToDefinition(_ sender: Any?) {
+        guard let current else { return }
+        intelliSense.textView(current.textView, goToDefinitionAt: current.textView.selectedRange().location)
+    }
+
+    @objc func findAllReferences(_ sender: Any?) {
+        if let current { intelliSense.findReferences(in: current.textView) }
+    }
+
+    @objc func renameSymbol(_ sender: Any?) {
+        if let current { intelliSense.rename(in: current.textView, documents: documents) }
     }
 
     private func updateCursorStatus() {
@@ -617,7 +728,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         runStatus.stringValue = "Running…"
         runFolder = folder
         isRunning = true
-        documents.forEach { $0.setDiagnostics([]) }
+        runDiagnostics = []
+        refreshDiagnostics()
         runner.run(command, in: folder)
         updateRunChrome()
     }
@@ -630,13 +742,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         isRunning = false
         let diagnostics = DiagnosticParser.parse(console.text)
-        let folder = runFolder ?? workspaceURL ?? FileManager.default.homeDirectoryForCurrentUser
-        panel.errors.set(diagnostics, folder: folder)
-        panel.updateTabTitles()
-        for document in documents {
-            guard let url = document.url?.standardizedFileURL else { continue }
-            document.setDiagnostics(diagnostics.filter { $0.url(relativeTo: folder).standardizedFileURL == url })
-        }
+        runDiagnostics = diagnostics
+        refreshDiagnostics()
         let errorCount = diagnostics.filter { $0.severity == .error }.count
         if status != 0, errorCount > 0 { panel.show(.errors) }
         if status == 0 {
@@ -648,6 +755,14 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if let clone = pendingClone {
             pendingClone = nil
             if status == 0 { setWorkspace(clone) }
+        }
+        if let spec = pendingInstall {
+            pendingInstall = nil
+            if status == 0 {
+                console.append("\n\(spec.name) is installed. IntelliSense is on for \(spec.languages.joined(separator: ", ")) files.\n", .info)
+                documents.filter { spec.languages.contains($0.language.id) }.forEach(attachLanguageServer)
+                refreshChrome()
+            }
         }
     }
 
@@ -732,9 +847,16 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
     }
 
+    #if DEBUG
+    func documentForProbe(_ textView: CodeTextView) -> EditorDocument? { documents.first { $0.textView === textView } }
+    func diagnosticsForProbe() -> [String] { liveDiagnostics.values.flatMap { $0 }.map { "\($0.line):\($0.column ?? 0) \($0.message)" } }
+    #endif
+
     func stopAll() {
         runner.stop()
         panel.terminal.stop()
+        documents.forEach { $0.session = nil }
+        LanguageServerManager.shared.stopAll()
     }
 
     // MARK: Validation
@@ -744,6 +866,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         case #selector(stopRunning(_:)): runner.isRunning
         case #selector(runActiveFile(_:)): !isRunning
         case #selector(saveDocument(_:)), #selector(saveDocumentAs(_:)): current != nil
+        case #selector(goToDefinition(_:)), #selector(findAllReferences(_:)), #selector(renameSymbol(_:)): current?.session != nil
         case #selector(saveAllDocuments(_:)): documents.contains { $0.isDirty }
         case #selector(closeFolder(_:)), #selector(editRunCommand(_:)): workspaceURL != nil
         case #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)): documents.count > 1
