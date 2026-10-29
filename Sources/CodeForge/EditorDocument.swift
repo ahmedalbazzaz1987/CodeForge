@@ -253,6 +253,7 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) {
         isDirty = true
+        if !textView.lenses.isEmpty { textView.lenses = [:] }   // positions are stale until the next save
         if hasDiagnostics { setDiagnostics([]) }
         session?.textChanged()
         rehighlight()

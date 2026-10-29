@@ -243,6 +243,14 @@ public enum Languages {
             runCommand: "make -f {file}"
         ),
         Language(
+            id: "diff", name: "Diff", extensions: ["diff", "patch"],
+            strings: [], capitalizedTypes: false, highlightNumbers: false,
+            patterns: [
+                (#"^(?:diff --git|index |---|\+\+\+).*"#, .comment), (#"^@@[^\n]*"#, .attribute),
+                (#"^\+[^\n]*"#, .inserted), (#"^-[^\n]*"#, .deleted),
+            ]
+        ),
+        Language(
             id: "dockerfile", name: "Dockerfile", extensions: ["dockerfile"], fileNames: ["Dockerfile", "Containerfile"],
             lineComments: ["#"],
             keywords: "from run cmd label expose env add copy entrypoint volume user workdir arg onbuild stopsignal healthcheck shell as",

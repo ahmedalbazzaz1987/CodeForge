@@ -59,6 +59,7 @@ enum DevSnapshot {
             delay = 4
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            if let textView = find(controller.window!.contentView!, CodeTextView.self) { print("LENSES:", textView.lenses) }
             let view = controller.window!.contentView!.superview!
             let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
             view.cacheDisplay(in: view.bounds, to: rep)

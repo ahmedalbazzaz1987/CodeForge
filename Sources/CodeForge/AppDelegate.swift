@@ -144,6 +144,7 @@ enum MainMenu {
             menu.add("Output", #selector(WorkspaceWindowController.showOutput(_:)), "u", [.command, .shift])
             menu.add("Error List", #selector(WorkspaceWindowController.showErrorList(_:)), "m", [.command, .shift])
             menu.add("Terminal", #selector(WorkspaceWindowController.showTerminal(_:)), "`", .control)
+            menu.add("Show CodeLens", #selector(WorkspaceWindowController.toggleCodeLens(_:)))
             menu.addItem(.separator())
             menu.add("Bigger", #selector(WorkspaceWindowController.increaseFontSize(_:)), "+")
             menu.add("Smaller", #selector(WorkspaceWindowController.decreaseFontSize(_:)), "-")
@@ -181,6 +182,13 @@ enum MainMenu {
             menu.add("Set Program to Debug…", #selector(WorkspaceWindowController.setDebugProgram(_:)))
             menu.add("Send Input…", #selector(WorkspaceWindowController.focusConsoleInput(_:)), "i", [.command, .shift])
             menu.add("Clear Console", #selector(WorkspaceWindowController.clearConsole(_:)), "k")
+        }
+
+        main.addSubmenu("Git") { menu in
+            menu.add("Git Changes", #selector(WorkspaceWindowController.showGitChanges(_:)), "g", [.command, .option])
+            menu.add("View History", #selector(WorkspaceWindowController.showGitHistory(_:)))
+            menu.addItem(.separator())
+            menu.add("Clone Repository…", #selector(WorkspaceWindowController.cloneRepository(_:)))
         }
 
         main.addSubmenu("Window") { menu in

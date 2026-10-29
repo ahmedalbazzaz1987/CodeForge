@@ -19,6 +19,7 @@ enum Theme {
     static let statusBusy = rgb(0xCA5100)       // a program is running
     static let errorRed = dynamic(0xE51400, 0xF14C4C)
     static let warningYellow = dynamic(0xBF8803, 0xCCA700)
+    static let lens = dynamic(0x8A8A8A, 0x7A7A7A)
     static let executionLine = NSColor(name: nil) { $0.isDark ? NSColor(srgbRed: 0.45, green: 0.42, blue: 0.0, alpha: 0.45) : NSColor(srgbRed: 1, green: 0.93, blue: 0.4, alpha: 0.7) }
 
     private static let comment = dynamic(0x008000, 0x6A9955)
@@ -29,6 +30,8 @@ enum Theme {
     private static let function = dynamic(0x74531F, 0xDCDCAA)
     private static let attribute = dynamic(0x001080, 0x9CDCFE)
     private static let tag = dynamic(0x800000, 0x569CD6)
+    private static let inserted = dynamic(0x22863A, 0x73C991)
+    private static let deleted = dynamic(0xCB2431, 0xF14C4C)
 
     static func color(for kind: TokenKind) -> NSColor {
         switch kind {
@@ -40,6 +43,8 @@ enum Theme {
         case .function: function
         case .attribute: attribute
         case .tag: tag
+        case .inserted: inserted
+        case .deleted: deleted
         }
     }
 

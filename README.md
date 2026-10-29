@@ -5,7 +5,7 @@ Explorer-style file tree, editor tabs, an **Output / Error List / Terminal** pan
 runs your code. The whole app is about **1 MB**, has no third-party dependencies, and updates itself from GitHub
 Releases.
 
-![CodeForge in dark mode, showing an error from a Python program in the Error List](docs/screenshot.png)
+![CodeForge in dark mode with CodeLens hints in the editor and the Git Changes panel](docs/screenshot.png)
 
 - **Native and light.** Written in Swift with AppKit. It starts instantly and runs on Apple Silicon and Intel Macs
   with macOS 14 or later.
@@ -20,6 +20,8 @@ Releases.
 - **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
   Debug C, C++, Objective-C, Swift, Rust and Go with LLDB: breakpoints (F9), stepping (F10 / F11 / ⇧F11), Locals,
   Call Stack and an expression evaluator.
+- **Git built in.** A Git Changes panel to stage, commit, switch branches, pull and push, diffs and history, and the
+  branch in the status bar. **CodeLens** shows reference counts and who last changed each function.
 - **Run, then fix.** Press ⌘R to run. Output streams into the Output tab, and you can type input for programs that ask
   for it. Compiler and runtime errors appear in the **Error List**. Double-click one to jump to the line, which is
   underlined in the editor.
@@ -71,6 +73,7 @@ open dist/CodeForge.app
 | Toggle comment / indent / outdent | ⌘/ / ⌘] / ⌘[ |
 | Show completions | ⌃Space or Esc |
 | Go to Definition / Find All References / Rename | F12 or ⌘-click / ⇧F12 / F2 |
+| Git Changes | ⌥⌘G |
 | Bigger / smaller text | ⌘+ / ⌘- |
 
 Right-click in the explorer to create, rename, reveal or trash files, or to open a Terminal in that folder. The
@@ -102,6 +105,16 @@ The first time you debug, macOS asks for your password to allow a debugger to co
 Xcode shows). To skip that prompt for good, run `sudo DevToolsSecurity -enable` once in Terminal.
 
 If CodeForge can't tell which program the build made, it asks once (Debug ▸ Set Program to Debug…).
+
+### Git and CodeLens
+
+Open a folder that's a Git repository and click **Git Changes** at the top of the sidebar (or the branch name in the
+status bar). Changed files are listed under *Staged Changes* and *Changes*: use **+** and **−** to stage and unstage,
+type a message, and click **Commit**. With nothing staged, **Commit All** commits every change. The arrows fetch, pull
+and push. Pushing uses your usual Git credentials (for GitHub, the macOS keychain or `gh auth login`).
+
+CodeLens hints appear after functions and types once a file is saved. Reference counts come from the language server
+(IntelliSense must be on for that language) and the author and time come from `git blame`.
 
 ### How files run
 
@@ -139,8 +152,8 @@ To sign with an Apple Developer ID instead of the default ad-hoc signature, pass
 ## Project layout
 
 ```
-Sources/CodeForgeKit/   Languages, tokenizer, error parsing, project templates, language-server protocol helpers (no UI; unit-tested)
-Sources/CodeForge/      The AppKit app: window, editor, IntelliSense, explorer, tabs, bottom panel, Start page, updater
+Sources/CodeForgeKit/   Languages, tokenizer, error parsing, templates, build detection, LSP and Git parsing (no UI; unit-tested)
+Sources/CodeForge/      The AppKit app: window, editor, IntelliSense, debugger, Git panel, explorer, bottom panel, updater
 Tests/                  Unit tests for CodeForgeKit
 scripts/                build-app.sh, release.sh, make-icon.swift
 ```

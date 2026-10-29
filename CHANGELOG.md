@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+Git and CodeLens.
+
+- **Git Changes** next to the Explorer: see changed files (staged and unstaged), stage or unstage each one, write a message and commit, switch or create branches, and Fetch, Pull and Push. Double-click a file to see its changes as a highlighted diff; right-click to undo changes.
+- **View History** shows the branch's commit log in a tab. Folders that aren't repositories offer **Create Git Repository**.
+- The status bar shows the current branch, commits ahead/behind, and the number of changed files. Click it to open Git Changes.
+- **CodeLens** after each function, method and type: how many references it has and who last changed it (from git blame), for example "2 references | Ahmed, 3 days ago". Turn it off in View ▸ Show CodeLens.
+- Diff files (`.diff`, `.patch`) are highlighted.
+
 ## 0.4.0
 
 Build and debug.

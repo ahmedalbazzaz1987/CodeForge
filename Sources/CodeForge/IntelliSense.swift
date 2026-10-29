@@ -129,6 +129,65 @@ final class LanguageSession {
         server.request("textDocument/definition", params(at: offset)) { handler(Self.locations($0)) }
     }
 
+    struct Symbol {
+        let name: String
+        let line: Int          // 1-based line of the name
+        let character: Int     // 0-based UTF-16 column of the name
+        let endLine: Int       // 1-based last line of the body
+    }
+
+    /// Functions, methods, classes and other types in this file (nested ones included).
+    func symbols(handler: @escaping ([Symbol]) -> Void) {
+        flush()
+        let interesting: Set<Int> = [5, 6, 9, 10, 11, 12, 23]   // class, method, constructor, enum, interface, function, struct
+        let lines = (document?.textView.string ?? "").components(separatedBy: "\n")
+        server.request("textDocument/documentSymbol", ["textDocument": ["uri": uri]]) { result in
+            var symbols: [Symbol] = []
+            /// Older servers give only the whole declaration's range; point at the name inside it instead.
+            func nameColumn(_ name: String, line: Int, from column: Int) -> Int {
+                guard lines.indices.contains(line), !name.isEmpty else { return column }
+                let text = lines[line] as NSString
+                let found = text.range(of: name, options: [], range: NSRange(location: min(column, text.length), length: text.length - min(column, text.length)))
+                return found.location == NSNotFound ? column : found.location
+            }
+            func position(_ range: Any?) -> (Int, Int)? {
+                guard let start = (range as? [String: Any])?["start"] as? [String: Any],
+                      let line = start["line"] as? Int, let character = start["character"] as? Int else { return nil }
+                return (line, character)
+            }
+            func endLine(_ range: Any?) -> Int? { ((range as? [String: Any])?["end"] as? [String: Any])?["line"] as? Int }
+            func walk(_ items: [[String: Any]]) {
+                for item in items {
+                    let range = item["range"] ?? (item["location"] as? [String: Any])?["range"]
+                    if interesting.contains(item["kind"] as? Int ?? 0), let (line, character) = position(item["selectionRange"] ?? range) {
+                        let name = item["name"] as? String ?? ""
+                        let column = item["selectionRange"] == nil ? nameColumn(name, line: line, from: character) : character
+                        symbols.append(Symbol(name: name, line: line + 1, character: column, endLine: (endLine(range) ?? line) + 1))
+                    }
+                    walk(item["children"] as? [[String: Any]] ?? [])
+                }
+            }
+            walk(result as? [[String: Any]] ?? [])
+            handler(symbols)
+        }
+    }
+
+    /// How many places use the symbol at a position (its declaration not included).
+    func referenceCount(line: Int, character: Int, handler: @escaping (Int) -> Void) {
+        server.request("textDocument/references", [
+            "textDocument": ["uri": uri], "position": ["line": line - 1, "character": character],
+            "context": ["includeDeclaration": false],
+        ]) { result in
+            // The same place can come back under two spellings of its path (e.g. /tmp and /private/tmp).
+            let places = Set(((result as? [[String: Any]]) ?? []).compactMap { location -> String? in
+                guard let uri = location["uri"] as? String, let url = URL(string: uri),
+                      let start = (location["range"] as? [String: Any])?["start"] as? [String: Any] else { return nil }
+                return "\(url.resolvingSymlinksInPath().path):\(start["line"] ?? 0):\(start["character"] ?? 0)"
+            })
+            handler(places.count)
+        }
+    }
+
     func references(at offset: Int, handler: @escaping ([Location]) -> Void) {
         var parameters = params(at: offset)
         parameters["context"] = ["includeDeclaration": true]

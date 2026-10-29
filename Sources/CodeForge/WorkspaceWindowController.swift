@@ -24,6 +24,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private let outerSplit = NSSplitView()
     private let innerSplit = NSSplitView()
     private let explorer = FileTreeView()
+    private lazy var sidebar = SidebarView(explorer: explorer)
+    private var git: GitChangesView { sidebar.git }
+    private let branchButton = NSButton()
     private let tabBar = TabBarView()
     private let editorHost = NSView()
     private let startPage = StartPage()
@@ -137,7 +140,15 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         intelliButton.contentTintColor = .white
         intelliButton.target = self
         intelliButton.action = #selector(intelliButtonClicked(_:))
-        let items = NSStackView(views: [runStatus, NSView(), intelliButton, cursorStatus, languageMenu])
+        branchButton.isBordered = false
+        branchButton.font = .systemFont(ofSize: 11)
+        branchButton.contentTintColor = .white
+        branchButton.imagePosition = .imageLeading
+        branchButton.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Branch")
+        branchButton.target = self
+        branchButton.action = #selector(showGitChanges(_:))
+        branchButton.isHidden = true
+        let items = NSStackView(views: [runStatus, NSView(), intelliButton, cursorStatus, languageMenu, branchButton])
         items.spacing = 14
         items.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 6)
         items.translatesAutoresizingMaskIntoConstraints = false
@@ -165,7 +176,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             status.heightAnchor.constraint(equalToConstant: 22),
         ])
         window?.contentView = root
-        explorer.isHidden = defaults.bool(forKey: "explorerHidden")
+        sidebar.isHidden = defaults.bool(forKey: "explorerHidden")
         panel.isHidden = defaults.bool(forKey: "consoleHidden")
     }
 
@@ -174,14 +185,14 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     /// Puts the explorer on the right (like Visual Studio's Solution Explorer) or the left.
     private func arrangeExplorer() {
         outerSplit.arrangedSubviews.forEach { outerSplit.removeArrangedSubview($0); $0.removeFromSuperview() }
-        let views: [NSView] = explorerOnRight ? [innerSplit, explorer] : [explorer, innerSplit]
+        let views: [NSView] = explorerOnRight ? [innerSplit, sidebar] : [sidebar, innerSplit]
         views.forEach(outerSplit.addArrangedSubview)
         outerSplit.setHoldingPriority(.init(250), forSubviewAt: explorerOnRight ? 0 : 1)
         outerSplit.setHoldingPriority(.init(260), forSubviewAt: explorerOnRight ? 1 : 0)
     }
 
     private func placeExplorerDivider() {
-        guard !explorer.isHidden else { return }
+        guard !sidebar.isHidden else { return }
         let width = defaults.double(forKey: "explorerWidth").clamped(150, 500, default: 260)
         outerSplit.setPosition(explorerOnRight ? outerSplit.bounds.width - width : width, ofDividerAt: 0)
     }
@@ -213,7 +224,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard didPlaceDividers else { return }
-        if !explorer.isHidden { defaults.set(Double(explorer.frame.width), forKey: "explorerWidth") }
+        if !sidebar.isHidden { defaults.set(Double(sidebar.frame.width), forKey: "explorerWidth") }
         if !panel.isHidden { defaults.set(Double(panel.frame.height), forKey: "consoleHeight") }
     }
 
@@ -316,6 +327,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             self?.refreshDiagnostics()
         }
         panel.errors.onOpen = { [weak self] url, diagnostic in self?.open(url, line: diagnostic.line, column: diagnostic.column) }
+        git.onOpenFile = { [weak self] in self?.open($0) }
+        git.onShowText = { [weak self] title, text, language in self?.openReadOnly(title: title, text: text, languageId: language) }
+        git.onMessage = { [weak self] in self?.runStatus.stringValue = $0 }
+        git.onStatusChange = { [weak self] status in self?.updateBranchButton(status) }
         startPage.onOpenRecent = { [weak self] in self?.open($0) }
         startPage.onNewProject = { [weak self] in self?.newProject(nil) }
         startPage.onOpen = { [weak self] in self?.openDocument(nil) }
@@ -326,6 +341,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     @objc private func appDidBecomeActive() {
         explorer.reload()
+        git.refresh()
     }
 
     // MARK: Documents
@@ -364,9 +380,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         explorer.setRoot(url)
         documents.forEach(attachLanguageServer)
         panel.terminal.directory = url ?? FileManager.default.homeDirectoryForCurrentUser
+        git.folder = url
         if let url {
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
-            if explorer.isHidden { toggleExplorer(nil) }
+            if sidebar.isHidden { toggleExplorer(nil) }
         }
         refreshChrome()
         saveSession()
@@ -435,6 +452,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         if document.session?.server === server, document.session?.url == url { return }
         document.session = LanguageSession(document: document, server: server, url: url)
+        // Give the server a moment to read the project before asking for CodeLens data.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak document] in
+            if let document { self?.updateCodeLens(document) }
+        }
     }
 
     /// Shows build/run errors and live language-server errors together.
@@ -496,6 +517,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard document.url != nil else { return saveAs(document) }
         do {
             try document.write()
+            git.refresh()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self, weak document] in
+                if let document { self?.updateCodeLens(document) }
+            }
             return true
         } catch {
             Prompt.show("Couldn't save “\(document.displayName)”", message: error.localizedDescription)
@@ -690,8 +715,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     // MARK: View menu
 
     @objc func toggleExplorer(_ sender: Any?) {
-        explorer.isHidden.toggle()
-        defaults.set(explorer.isHidden, forKey: "explorerHidden")
+        sidebar.isHidden.toggle()
+        defaults.set(sidebar.isHidden, forKey: "explorerHidden")
         outerSplit.adjustSubviews()
         placeExplorerDivider()
     }
@@ -788,6 +813,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             afterBuild = nil
             if status == 0 { next() }
         }
+        git.refresh()
         if let spec = pendingInstall {
             pendingInstall = nil
             if status == 0 {
@@ -1063,6 +1089,88 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         defaults.set(breakpoints.mapValues { Array($0) }, forKey: "breakpoints")
     }
 
+    // MARK: Git and CodeLens
+
+    @objc func showGitChanges(_ sender: Any?) {
+        if sidebar.isHidden { toggleExplorer(nil) }
+        sidebar.show(1)
+    }
+
+    @objc func showGitHistory(_ sender: Any?) {
+        git.showHistory()
+    }
+
+    private func updateBranchButton(_ status: GitStatus?) {
+        guard let status else { branchButton.isHidden = true; return }
+        var title = " " + status.branch
+        if status.ahead > 0 { title += " ↑\(status.ahead)" }
+        if status.behind > 0 { title += " ↓\(status.behind)" }
+        if !status.changes.isEmpty { title += "  ✎\(status.changes.count)" }
+        branchButton.title = title
+        branchButton.toolTip = "Git: \(status.changes.count) changed file\(status.changes.count == 1 ? "" : "s"). Click to open Git Changes."
+        branchButton.isHidden = false
+    }
+
+    /// Opens text that isn't a file (a diff, the history) in a read-only tab.
+    private func openReadOnly(title: String, text: String, languageId: String) {
+        if let index = documents.firstIndex(where: { $0.url == nil && $0.displayName == title }) {
+            documents.remove(at: index)
+        }
+        let document = EditorDocument(url: nil, text: text, fontSize: fontSize, untitledName: title)
+        document.language = Languages.language(id: languageId) ?? Languages.plainText
+        document.textView.isEditable = false
+        document.onStateChange = { [weak self] in self?.refreshChrome() }
+        documents.append(document)
+        select(documents.count - 1)
+    }
+
+    private var showsCodeLens: Bool { defaults.object(forKey: "showCodeLens") as? Bool ?? true }
+
+    @objc func toggleCodeLens(_ sender: Any?) {
+        defaults.set(!showsCodeLens, forKey: "showCodeLens")
+        documents.forEach(updateCodeLens)
+    }
+
+    /// CodeLens: "3 references | Ahmed, 2 days ago" after each function and type, from the language server and git blame.
+    private func updateCodeLens(_ document: EditorDocument) {
+        guard showsCodeLens, !document.isDirty, let session = document.session, let url = document.url else {
+            document.textView.lenses = [:]
+            return
+        }
+        let countsReferences = session.server.spec.id != "sourcekit-lsp" || workspaceURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent(".build").path) } == true
+        session.symbols { [weak document] symbols in
+            guard let document, !document.isDirty else { return }
+            let symbols = Array(symbols.prefix(60))
+            Git.run(["blame", "--line-porcelain", "--", url.lastPathComponent], in: url.deletingLastPathComponent()) { [weak document] result in
+                guard let document, !document.isDirty else { return }
+                let blame = result.succeeded ? GitBlame.parse(result.output) : [:]
+                var lenses: [Int: String] = [:]
+                var remaining = symbols.count
+                func finish() {
+                    remaining -= 1
+                    if remaining <= 0, !document.isDirty { document.textView.lenses = lenses }
+                }
+                guard !symbols.isEmpty else { return document.textView.lenses = [:] }
+                for symbol in symbols {
+                    var parts: [String] = []
+                    if let change = GitBlame.latest(in: blame, lines: symbol.line...max(symbol.line, symbol.endLine)) {
+                        parts.append(change.isUncommitted ? "Not committed yet" : "\(change.author), \(RelativeTime.describe(change.time))")
+                    }
+                    guard countsReferences else {
+                        if !parts.isEmpty { lenses[symbol.line] = parts.joined(separator: "  |  ") }
+                        finish()
+                        continue
+                    }
+                    session.referenceCount(line: symbol.line, character: symbol.character) { count in
+                        parts.insert("\(count) reference\(count == 1 ? "" : "s")", at: 0)
+                        lenses[symbol.line] = parts.joined(separator: "  |  ")
+                        finish()
+                    }
+                }
+            }
+        }
+    }
+
     #if DEBUG
     func documentForProbe(_ textView: CodeTextView) -> EditorDocument? { documents.first { $0.textView === textView } }
     func diagnosticsForProbe() -> [String] { liveDiagnostics.values.flatMap { $0 }.map { "\($0.line):\($0.column ?? 0) \($0.message)" } }
@@ -1087,7 +1195,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         case #selector(debugContinue(_:)), #selector(debugStepOver(_:)), #selector(debugStepInto(_:)), #selector(debugStepOut(_:)):
             debugSession?.state == .paused
         case #selector(debugPause(_:)): debugSession?.state == .running
-        case #selector(setDebugProgram(_:)), #selector(editBuildCommand(_:)): workspaceURL != nil
+        case #selector(setDebugProgram(_:)), #selector(editBuildCommand(_:)), #selector(showGitChanges(_:)): workspaceURL != nil
+        case #selector(showGitHistory(_:)): git.status != nil
         case #selector(deleteAllBreakpoints(_:)): !breakpoints.isEmpty
         case #selector(saveDocument(_:)), #selector(saveDocumentAs(_:)): current != nil
         case #selector(goToDefinition(_:)), #selector(findAllReferences(_:)), #selector(renameSymbol(_:)): current?.session != nil
@@ -1099,9 +1208,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleExplorer(_:)) { menuItem.title = explorer.isHidden ? "Show Explorer" : "Hide Explorer" }
+        if menuItem.action == #selector(toggleExplorer(_:)) { menuItem.title = sidebar.isHidden ? "Show Explorer" : "Hide Explorer" }
         if menuItem.action == #selector(toggleConsole(_:)) { menuItem.title = panel.isHidden ? "Show Panel" : "Hide Panel" }
         if menuItem.action == #selector(startDebugging(_:)) { menuItem.title = debugSession?.state == .paused ? "Continue" : "Start Debugging" }
+        if menuItem.action == #selector(toggleCodeLens(_:)) { menuItem.state = showsCodeLens ? .on : .off }
         if menuItem.action == #selector(toggleExplorerSide(_:)) { menuItem.title = explorerOnRight ? "Move Explorer to Left" : "Move Explorer to Right" }
         return isEnabled(menuItem.action)
     }

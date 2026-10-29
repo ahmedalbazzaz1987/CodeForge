@@ -8,6 +8,8 @@ final class CodeTextView: NSTextView {
     var blockComment: (open: String, close: String)?
     var indentAfterColon = false
     weak var assistant: CodeTextViewAssistant?
+    /// CodeLens text by 1-based line, drawn faintly after the end of the line.
+    var lenses: [Int: String] = [:] { didSet { needsDisplay = true } }
     private var hoverTimer: Timer?
 
     func configure(for language: Language) {
@@ -21,6 +23,7 @@ final class CodeTextView: NSTextView {
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
+        drawLenses(in: rect)
         guard let layoutManager, selectedRange().length == 0 else { return }
         let location = selectedRange().location
         let length = (string as NSString).length
@@ -36,6 +39,31 @@ final class CodeTextView: NSTextView {
         lineRect.size.width = bounds.width
         Theme.currentLine.setFill()
         lineRect.intersection(rect).fill()
+    }
+
+    private func drawLenses(in rect: NSRect) {
+        guard !lenses.isEmpty, let layoutManager, let textContainer else { return }
+        let ns = string as NSString
+        let lines = TextLines(string)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: max((font?.pointSize ?? 13) - 2, 9)),
+            .foregroundColor: Theme.lens,
+        ]
+        for (line, text) in lenses where line - 1 < lines.lineStarts.count {
+            let start = lines.lineStarts[line - 1]
+            guard start < ns.length else { continue }
+            var lineRange = ns.lineRange(for: NSRange(location: start, length: 0))
+            // Measure the text only: the line break's glyph reaches the edge of the (unbounded) container.
+            while lineRange.length > 0, [0x0A, 0x0D].contains(ns.character(at: NSMaxRange(lineRange) - 1)) { lineRange.length -= 1 }
+            guard lineRange.length > 0 else { continue }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
+            var used = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            used.origin.x += textContainerOrigin.x
+            used.origin.y += textContainerOrigin.y
+            let point = NSPoint(x: used.maxX + 28, y: used.minY + 1)
+            guard NSRect(x: point.x, y: used.minY, width: 600, height: used.height).intersects(rect) else { continue }
+            (text as NSString).draw(at: point, withAttributes: attributes)
+        }
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {

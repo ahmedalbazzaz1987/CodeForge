@@ -2,7 +2,7 @@ import Foundation
 
 /// What a highlighted piece of source text is.
 public enum TokenKind: Sendable, Equatable {
-    case comment, string, keyword, type, number, function, attribute, tag, heading
+    case comment, string, keyword, type, number, function, attribute, tag, heading, inserted, deleted
 }
 
 /// A language CodeForge can highlight and (optionally) run.
