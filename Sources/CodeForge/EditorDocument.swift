@@ -182,6 +182,18 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
         hasDiagnostics = !diagnostics.isEmpty
     }
 
+    /// Highlights the line where the debugger is paused (1-based), or clears it.
+    func setExecutionLine(_ line: Int?) {
+        guard let layoutManager = textView.layoutManager else { return }
+        let ns = textView.string as NSString
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: ns.length))
+        ruler.executionLine = line
+        guard let line else { return }
+        let range = ns.lineRange(for: NSRange(location: min(ruler.lineStart(line - 1), ns.length), length: 0))
+        layoutManager.addTemporaryAttribute(.backgroundColor, value: Theme.executionLine, forCharacterRange: range)
+        reveal(line: line, column: nil)
+    }
+
     /// The error or warning message under a character, for hover info.
     func diagnosticMessage(at index: Int) -> String? {
         let messages = diagnosticRanges.filter { NSLocationInRange(index, $0.range) }.map(\.message)

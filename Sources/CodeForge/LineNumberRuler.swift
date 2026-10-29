@@ -1,9 +1,14 @@
 import AppKit
 
-/// Line numbers in the editor's left margin. Click a number to select that line.
+/// Line numbers in the editor's left margin, with breakpoints (click to toggle) and the debugger's current line.
 final class LineNumberRuler: NSRulerView {
     private weak var textView: NSTextView?
     private var lineStarts: [Int] = [0]
+    /// 1-based lines with breakpoints.
+    var breakpoints: Set<Int> = [] { didSet { needsDisplay = true } }
+    /// 1-based line where the debugger is paused.
+    var executionLine: Int? { didSet { needsDisplay = true } }
+    var onToggleBreakpoint: ((Int) -> Void)?
     var font: NSFont = .monospacedDigitSystemFont(ofSize: 11, weight: .regular) {
         didSet { updateThickness(); needsDisplay = true }
     }
@@ -51,7 +56,7 @@ final class LineNumberRuler: NSRulerView {
 
     private func updateThickness() {
         let digits = max(3, String(lineStarts.count).count)
-        let width = ceil(("8" as NSString).size(withAttributes: [.font: font]).width * CGFloat(digits) + 20)
+        let width = ceil(("8" as NSString).size(withAttributes: [.font: font]).width * CGFloat(digits) + 34)
         if abs(ruleThickness - width) > 0.5 { ruleThickness = width }
     }
 
@@ -88,6 +93,22 @@ final class LineNumberRuler: NSRulerView {
                 .paragraphStyle: paragraph,
             ]
             ("\(index + 1)" as NSString).draw(in: NSRect(x: 0, y: y, width: ruleThickness - 10, height: lineRect.height), withAttributes: attributes)
+            let marker = NSRect(x: 4, y: convert(lineRect, from: textView).midY - 6, width: 12, height: 12)
+            if breakpoints.contains(index + 1) {
+                Theme.errorRed.setFill()
+                NSBezierPath(ovalIn: marker).fill()
+            }
+            if executionLine == index + 1 {
+                let arrow = NSBezierPath()
+                arrow.move(to: NSPoint(x: marker.minX, y: marker.minY + 2))
+                arrow.line(to: NSPoint(x: marker.maxX - 1, y: marker.midY))
+                arrow.line(to: NSPoint(x: marker.minX, y: marker.maxY - 2))
+                arrow.close()
+                NSColor.systemYellow.setFill()
+                arrow.fill()
+                NSColor.black.withAlphaComponent(0.5).setStroke()
+                arrow.stroke()
+            }
             index += 1
         }
     }
@@ -97,8 +118,6 @@ final class LineNumberRuler: NSRulerView {
         let point = textView.convert(event.locationInWindow, from: nil)
         let glyph = layoutManager.glyphIndex(for: NSPoint(x: 0, y: point.y - textView.textContainerOrigin.y), in: container)
         let character = layoutManager.characterIndexForGlyph(at: glyph)
-        let range = (textView.string as NSString).lineRange(for: NSRange(location: min(character, (textView.string as NSString).length), length: 0))
-        textView.window?.makeFirstResponder(textView)
-        textView.setSelectedRange(range)
+        onToggleBreakpoint?(line(at: min(character, (textView.string as NSString).length)) + 1)
     }
 }

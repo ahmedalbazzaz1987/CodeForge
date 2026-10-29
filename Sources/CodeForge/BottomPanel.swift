@@ -4,13 +4,14 @@ import CodeForgeKit
 /// The docked panel under the editor: Output, Error List and Terminal tabs.
 final class BottomPanel: NSView {
     enum Tab: Int, CaseIterable {
-        case output, errors, references, terminal
-        var title: String { ["Output", "Error List", "References", "Terminal"][rawValue] }
+        case output, errors, references, debug, terminal
+        var title: String { ["Output", "Error List", "References", "Debug", "Terminal"][rawValue] }
     }
 
     let output = ConsoleView()
     let errors = ErrorListView()
     let references = ReferencesView()
+    let debug = DebugPanel()
     let terminal = TerminalView()
     var onHide: (() -> Void)?
     private(set) var selected: Tab = .output
@@ -54,7 +55,7 @@ final class BottomPanel: NSView {
     func show(_ tab: Tab) {
         selected = tab
         content.subviews.forEach { $0.removeFromSuperview() }
-        let view: NSView = [output, errors, references, terminal][tab.rawValue]
+        let view: NSView = [output, errors, references, debug, terminal][tab.rawValue]
         view.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(view)
         NSLayoutConstraint.activate([
@@ -89,6 +90,7 @@ final class BottomPanel: NSView {
         case .output: output.clear(nil)
         case .errors: errors.set([], folder: nil)
         case .references: references.set(title: "", [])
+        case .debug: debug.clear()
         case .terminal: terminal.clear()
         }
         updateTabTitles()

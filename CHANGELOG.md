@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+Build and debug.
+
+- **Build** (⇧⌘B) detects the project type: Swift packages, Cargo, Go modules, CMake, Xcode projects, Make, npm and TypeScript. Single C, C++, Objective-C, Swift, Rust and Go files are compiled with debug information. **Clean** and a per-project **Set Build Command…** are in the Build menu.
+- **Debugger** using LLDB (Xcode's `lldb-dap`) for C, C++, Objective-C, Swift, Rust and Go programs: Start Debugging (F5), breakpoints (click the line-number margin or press F9), Continue, Step Over (F10), Step Into (F11), Step Out (⇧F11), Pause and Stop (⇧F5).
+- **Debug tab** with Locals (expand structs and arrays), Call Stack (click a frame to go there) and an expression evaluator. The paused line is highlighted with a yellow arrow.
+- Debug toolbar above the editor while debugging; the status bar turns orange.
+- Breakpoints are remembered between launches.
+- Tool output no longer shows terminal color codes, and an error reported by both the build and IntelliSense is listed once.
+
 ## 0.3.0
 
 IntelliSense, powered by standard language servers.

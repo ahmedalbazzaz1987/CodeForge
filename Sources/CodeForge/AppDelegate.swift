@@ -155,11 +155,30 @@ enum MainMenu {
             menu.add("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
         }
 
-        main.addSubmenu("Run") { menu in
-            menu.add("Run", #selector(WorkspaceWindowController.runActiveFile(_:)), "r")
-            menu.add("Stop", #selector(WorkspaceWindowController.stopRunning(_:)), ".")
+        main.addSubmenu("Build") { menu in
+            menu.add("Build", #selector(WorkspaceWindowController.buildProject(_:)), "b", [.command, .shift])
+            menu.add("Clean", #selector(WorkspaceWindowController.cleanProject(_:)), "k", [.command, .shift])
+            menu.addItem(.separator())
+            menu.add("Set Build Command…", #selector(WorkspaceWindowController.editBuildCommand(_:)))
+        }
+
+        main.addSubmenu("Debug") { menu in
+            let f = MainMenu.functionKey
+            menu.add("Start Debugging", #selector(WorkspaceWindowController.startDebugging(_:)), f(NSF5FunctionKey), [])
+            menu.add("Start Without Debugging", #selector(WorkspaceWindowController.runActiveFile(_:)), "r")
+            menu.add("Stop Debugging", #selector(WorkspaceWindowController.stopDebugging(_:)), f(NSF5FunctionKey), .shift)
+            menu.add("Stop Running", #selector(WorkspaceWindowController.stopRunning(_:)), ".")
+            menu.addItem(.separator())
+            menu.add("Step Over", #selector(WorkspaceWindowController.debugStepOver(_:)), f(NSF10FunctionKey), [])
+            menu.add("Step Into", #selector(WorkspaceWindowController.debugStepInto(_:)), f(NSF11FunctionKey), [])
+            menu.add("Step Out", #selector(WorkspaceWindowController.debugStepOut(_:)), f(NSF11FunctionKey), .shift)
+            menu.add("Pause", #selector(WorkspaceWindowController.debugPause(_:)))
+            menu.addItem(.separator())
+            menu.add("Toggle Breakpoint", #selector(WorkspaceWindowController.toggleBreakpointAtCursor(_:)), f(NSF9FunctionKey), [])
+            menu.add("Delete All Breakpoints", #selector(WorkspaceWindowController.deleteAllBreakpoints(_:)), f(NSF9FunctionKey), [.command, .shift])
             menu.addItem(.separator())
             menu.add("Set Run Command…", #selector(WorkspaceWindowController.editRunCommand(_:)), "r", [.command, .shift])
+            menu.add("Set Program to Debug…", #selector(WorkspaceWindowController.setDebugProgram(_:)))
             menu.add("Send Input…", #selector(WorkspaceWindowController.focusConsoleInput(_:)), "i", [.command, .shift])
             menu.add("Clear Console", #selector(WorkspaceWindowController.clearConsole(_:)), "k")
         }

@@ -156,9 +156,17 @@ final class Runner {
                 handle.readabilityHandler = nil
                 return
             }
-            let text = String(decoding: data, as: UTF8.self)
+            let text = Runner.stripTerminalCodes(String(decoding: data, as: UTF8.self))
             DispatchQueue.main.async { self?.onOutput?(text, kind) }
         }
+    }
+
+    private static let terminalCodes = try! NSRegularExpression(pattern: "\u{1B}\\[[0-9;?]*[A-Za-z]")
+
+    /// Removes color and cursor escape codes that tools print even without a terminal.
+    static func stripTerminalCodes(_ text: String) -> String {
+        guard text.contains("\u{1B}") else { return text }
+        return terminalCodes.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: (text as NSString).length), withTemplate: "")
     }
 
     private func descendants(of root: pid_t) -> [pid_t] {

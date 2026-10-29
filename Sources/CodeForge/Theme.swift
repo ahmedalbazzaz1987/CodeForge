@@ -19,6 +19,7 @@ enum Theme {
     static let statusBusy = rgb(0xCA5100)       // a program is running
     static let errorRed = dynamic(0xE51400, 0xF14C4C)
     static let warningYellow = dynamic(0xBF8803, 0xCCA700)
+    static let executionLine = NSColor(name: nil) { $0.isDark ? NSColor(srgbRed: 0.45, green: 0.42, blue: 0.0, alpha: 0.45) : NSColor(srgbRed: 1, green: 0.93, blue: 0.4, alpha: 0.7) }
 
     private static let comment = dynamic(0x008000, 0x6A9955)
     private static let string = dynamic(0xA31515, 0xCE9178)

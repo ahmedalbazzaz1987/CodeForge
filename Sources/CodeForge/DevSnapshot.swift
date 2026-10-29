@@ -19,6 +19,15 @@ enum DevSnapshot {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { controller.runActiveFile(nil) }
             delay = 5
         }
+        if let line = env["CF_BREAK"].flatMap(Int.init) {
+            // Set a breakpoint on a line of the open file.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                guard let textView = find(controller.window!.contentView!, CodeTextView.self),
+                      let document = controller.documentForProbe(textView) else { return }
+                document.reveal(line: line, column: nil)
+                controller.toggleBreakpointAtCursor(nil)
+            }
+        }
         if let action = env["CF_ACTION"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { _ = controller.perform(NSSelectorFromString(action), with: nil) }
         }

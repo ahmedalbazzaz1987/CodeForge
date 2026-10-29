@@ -7,6 +7,7 @@ private extension NSToolbarItem.Identifier {
     static let open = Self("open")
     static let saveAll = Self("saveAll")
     static let start = Self("start")
+    static let debug = Self("debug")
     static let stop = Self("stop")
     static let panel = Self("panel")
 }
@@ -39,6 +40,13 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private var runDiagnostics: [Diagnostic] = []
     private var liveDiagnostics: [URL: [Diagnostic]] = [:]
     private var pendingInstall: LanguageServerSpec?
+    private var afterBuild: (() -> Void)?
+    private var debugSession: DebugSession?
+    private var selectedFrame: DebugSession.Frame?
+    private lazy var debugBar = DebugBar(target: self)
+    private var debugBarHeight: NSLayoutConstraint!
+    /// Breakpoint lines (1-based) per file path; saved between launches.
+    private var breakpoints: [String: Set<Int>] = [:]
     private var untitledCount = 0
     private var isRunning = false
     private var runFolder: URL?
@@ -74,7 +82,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     private func buildLayout() {
         let editorArea = NSView()
-        for view in [tabBar, editorHost] {
+        debugBarHeight = debugBar.heightAnchor.constraint(equalToConstant: 0)
+        debugBar.isHidden = true
+        for view in [tabBar, debugBar, editorHost] {
             view.translatesAutoresizingMaskIntoConstraints = false
             editorArea.addSubview(view)
         }
@@ -83,7 +93,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             tabBar.leadingAnchor.constraint(equalTo: editorArea.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: editorArea.trailingAnchor),
             tabBar.heightAnchor.constraint(equalToConstant: 30),
-            editorHost.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            debugBar.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            debugBar.leadingAnchor.constraint(equalTo: editorArea.leadingAnchor),
+            debugBar.trailingAnchor.constraint(equalTo: editorArea.trailingAnchor),
+            debugBarHeight,
+            editorHost.topAnchor.constraint(equalTo: debugBar.bottomAnchor),
             editorHost.leadingAnchor.constraint(equalTo: editorArea.leadingAnchor),
             editorHost.trailingAnchor.constraint(equalTo: editorArea.trailingAnchor),
             editorHost.bottomAnchor.constraint(equalTo: editorArea.bottomAnchor),
@@ -221,7 +235,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.newProject, .open, .saveAll, .flexibleSpace, .start, .stop, .flexibleSpace, .panel, .files]
+        [.newProject, .open, .saveAll, .flexibleSpace, .start, .debug, .stop, .flexibleSpace, .panel, .files]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -241,6 +255,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             .open: ("Open", "folder", #selector(openDocument(_:))),
             .saveAll: ("Save All", "square.and.arrow.down.on.square", #selector(saveAllDocuments(_:))),
             .stop: ("Stop", "stop.fill", #selector(stopRunning(_:))),
+            .debug: ("Debug", "ladybug", #selector(startDebugging(_:))),
             .panel: ("Panel", "rectangle.bottomthird.inset.filled", #selector(toggleConsole(_:))),
         ]
         guard let (label, symbol, action) = specs[id] else { return nil }
@@ -365,6 +380,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         let document = EditorDocument(url: url, text: text, fontSize: fontSize, untitledName: name)
         document.textView.assistant = intelliSense
+        if let path = url?.standardizedFileURL.path { document.ruler.breakpoints = breakpoints[path] ?? [] }
+        document.ruler.onToggleBreakpoint = { [weak self, weak document] line in
+            guard let document else { return }
+            self?.toggleBreakpoint(in: document, line: line)
+        }
         document.onStateChange = { [weak self, weak document] in
             guard let self, let document else { return }
             // A new file name or language may need a different language server.
@@ -420,9 +440,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     /// Shows build/run errors and live language-server errors together.
     private func refreshDiagnostics() {
         let live = liveDiagnostics.values.flatMap { $0 }
-        panel.errors.set(runDiagnostics + live, folder: runFolder ?? workspaceURL ?? FileManager.default.homeDirectoryForCurrentUser)
-        panel.updateTabTitles()
         let folder = runFolder ?? workspaceURL ?? FileManager.default.homeDirectoryForCurrentUser
+        // A build error that the language server also reports is listed once.
+        let liveKeys = Set(live.map { "\($0.url(relativeTo: folder).standardizedFileURL.path):\($0.line):\($0.message.lowercased())" })
+        let fromRunOnly = runDiagnostics.filter { !liveKeys.contains("\($0.url(relativeTo: folder).standardizedFileURL.path):\($0.line):\($0.message.lowercased())") }
+        panel.errors.set(fromRunOnly + live, folder: folder)
+        panel.updateTabTitles()
         for document in documents {
             guard let url = document.url?.standardizedFileURL else { continue }
             let fromRun = runDiagnostics.filter { $0.url(relativeTo: folder).standardizedFileURL == url }
@@ -520,7 +543,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         let custom = customCommandKey.flatMap { defaults.string(forKey: $0) }
         startButton.title = " " + (custom != nil ? workspaceURL!.lastPathComponent : current?.displayName ?? "Start")
         startButton.isEnabled = !isRunning && (custom != nil || current != nil)
-        statusBar.color = isRunning ? Theme.statusBusy : (workspaceURL == nil ? Theme.statusIdle : Theme.accent)
+        let debugging = debugSession != nil
+        statusBar.color = isRunning || debugging ? Theme.statusBusy : (workspaceURL == nil ? Theme.statusIdle : Theme.accent)
+        startButton.isEnabled = startButton.isEnabled && !debugging
         window?.toolbar?.validateVisibleItems()
     }
 
@@ -592,6 +617,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func restoreSession() {
+        if let saved = defaults.dictionary(forKey: "breakpoints") as? [String: [Int]] {
+            breakpoints = saved.mapValues(Set.init)
+        }
         // Read everything first: opening the folder saves the (still empty) session.
         let files = defaults.stringArray(forKey: "openFiles") ?? []
         let selected = defaults.string(forKey: "selectedFile")
@@ -756,6 +784,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             pendingClone = nil
             if status == 0 { setWorkspace(clone) }
         }
+        if let next = afterBuild {
+            afterBuild = nil
+            if status == 0 { next() }
+        }
         if let spec = pendingInstall {
             pendingInstall = nil
             if status == 0 {
@@ -847,12 +879,197 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
     }
 
+    // MARK: Build
+
+    private func buildKey(_ name: String) -> String? { workspaceURL.map { name + ":" + $0.path } }
+
+    private var outputDirectory: URL {
+        let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "CodeForge").appendingPathComponent("build")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    /// The project's custom build command, its detected build system, or the current file on its own.
+    private func buildPlan() -> BuildPlan? {
+        if let workspaceURL, let key = buildKey("buildCommand"), let command = defaults.string(forKey: key) {
+            return BuildPlan(name: "custom command", build: command, program: nil, folder: workspaceURL.path)
+        }
+        if let workspaceURL, let plan = BuildSystem.detect(in: workspaceURL) { return plan }
+        guard let current, let file = current.url else { return nil }
+        return BuildSystem.singleFile(file, languageId: current.language.id, outputDirectory: outputDirectory)
+    }
+
+    @objc func buildProject(_ sender: Any?) {
+        build { [weak self] in self?.runStatus.stringValue = "Build succeeded" }
+    }
+
+    private func build(then next: @escaping () -> Void) {
+        saveAllDocuments(nil)
+        if let current, current.url == nil { guard saveAs(current) else { return } }
+        guard let plan = buildPlan() else {
+            return Prompt.show("Nothing to build", message: "Open a project folder or a source file, or set a build command with Build ▸ Set Build Command….")
+        }
+        afterBuild = next
+        start(plan.build, in: URL(fileURLWithPath: plan.folder))
+        runStatus.stringValue = "Building \(plan.name)…"
+    }
+
+    @objc func cleanProject(_ sender: Any?) {
+        guard let plan = buildPlan(), let clean = plan.clean else {
+            return Prompt.show("Nothing to clean", message: "This project type has no clean step.")
+        }
+        start(clean, in: URL(fileURLWithPath: plan.folder))
+    }
+
+    @objc func editBuildCommand(_ sender: Any?) {
+        guard let key = buildKey("buildCommand") else {
+            return Prompt.show("Open a folder first", message: "A build command is saved for each project folder.")
+        }
+        let detected = workspaceURL.flatMap(BuildSystem.detect(in:))
+        let message = "Runs in the project folder for Build (⇧⌘B) and before debugging. Leave it empty to use "
+            + (detected.map { "the detected \($0.name) build: \($0.build)" } ?? "the current file's compiler") + "."
+        guard let command = Prompt.ask("Build Command", message: message, defaultValue: defaults.string(forKey: key) ?? "", confirm: "Save") else { return }
+        let trimmed = command.trimmingCharacters(in: .whitespaces)
+        trimmed.isEmpty ? defaults.removeObject(forKey: key) : defaults.set(trimmed, forKey: key)
+    }
+
+    // MARK: Debug
+
+    @objc func startDebugging(_ sender: Any?) {
+        if let debugSession, debugSession.state == .paused { return debugSession.resume() }
+        guard debugSession == nil, !isRunning else { return }
+        if let language = current?.language.id, ["python", "javascript", "typescript", "ruby", "php", "shell"].contains(language), buildPlan()?.program == nil {
+            return Prompt.show("Debugging isn't available for \(current!.language.name) yet",
+                               message: "CodeForge debugs compiled programs (C, C++, Objective-C, Swift, Rust and Go) with LLDB. Use Start (⌘R) to run this file.")
+        }
+        build { [weak self] in self?.launchDebugger() }
+    }
+
+    private func launchDebugger() {
+        let customProgram = buildKey("debugProgram").flatMap { defaults.string(forKey: $0) }
+        guard let path = customProgram ?? buildPlan()?.program, FileManager.default.isExecutableFile(atPath: path) else {
+            return chooseDebugProgram(thenStart: true)
+        }
+        let session = DebugSession(program: URL(fileURLWithPath: path))
+        session.breakpoints = { [weak self] in
+            Dictionary(uniqueKeysWithValues: (self?.breakpoints ?? [:]).map { (URL(fileURLWithPath: $0.key), $0.value) })
+        }
+        session.onOutput = { [weak self] text, kind in self?.console.append(text, kind) }
+        session.onStopped = { [weak self] in self?.debuggerStopped() }
+        session.onStateChange = { [weak self] in self?.debugStateChanged() }
+        let folder = workspaceURL ?? URL(fileURLWithPath: path).deletingLastPathComponent()
+        console.append("\nDebugging \(path)\n", .info)
+        guard session.start(arguments: [], folder: folder) else {
+            return Prompt.show("Couldn't start the debugger", message: "CodeForge uses lldb-dap from Xcode. Install Xcode, then run: xcode-select -s /Applications/Xcode.app")
+        }
+        debugSession = session
+        panel.debug.session = session
+        panel.debug.onSelectFrame = { [weak self] frame in self?.selectFrame(frame) }
+        panel.debug.onEvaluate = { [weak self] expression in
+            self?.debugSession?.evaluate(expression, frame: self?.selectedFrame?.id) { self?.panel.debug.showResult($0) }
+        }
+        debugBar.isHidden = false
+        debugBarHeight.constant = 30
+        debugStateChanged()
+    }
+
+    private func debuggerStopped() {
+        guard let session = debugSession else { return }
+        selectFrame(session.frames.first { $0.file.map { FileManager.default.fileExists(atPath: $0.path) } ?? false } ?? session.frames.first)
+        showPanelTab(.debug)
+        NSApp.activate()
+    }
+
+    private func selectFrame(_ frame: DebugSession.Frame?) {
+        guard let session = debugSession, let frame else { return }
+        selectedFrame = frame
+        documents.forEach { $0.setExecutionLine(nil) }
+        if let file = frame.file, FileManager.default.fileExists(atPath: file.path) {
+            open(file)
+            current?.setExecutionLine(frame.line)
+        }
+        session.locals(frame: frame.id) { [weak self] variables in
+            guard let self else { return }
+            panel.debug.show(frames: session.frames, selected: session.frames.firstIndex { $0.id == frame.id } ?? 0, variables: variables)
+        }
+    }
+
+    private func debugStateChanged() {
+        guard let session = debugSession else { return }
+        debugBar.update(session.state, reason: session.stopReason)
+        if session.state == .running { documents.forEach { $0.setExecutionLine(nil) } }
+        if session.state == .ended {
+            debugSession = nil
+            selectedFrame = nil
+            documents.forEach { $0.setExecutionLine(nil) }
+            panel.debug.clear()
+            debugBar.isHidden = true
+            debugBarHeight.constant = 0
+            runStatus.stringValue = "Debugging ended"
+        } else {
+            runStatus.stringValue = session.state == .paused ? "Paused" : "Debugging…"
+        }
+        updateRunChrome()
+    }
+
+    @objc func stopDebugging(_ sender: Any?) { debugSession?.stop() }
+    @objc func debugContinue(_ sender: Any?) { debugSession?.resume() }
+    @objc func debugPause(_ sender: Any?) { debugSession?.pause() }
+    @objc func debugStepOver(_ sender: Any?) { debugSession?.stepOver() }
+    @objc func debugStepInto(_ sender: Any?) { debugSession?.stepInto() }
+    @objc func debugStepOut(_ sender: Any?) { debugSession?.stepOut() }
+
+    @objc func setDebugProgram(_ sender: Any?) {
+        chooseDebugProgram(thenStart: false)
+    }
+
+    private func chooseDebugProgram(thenStart: Bool) {
+        guard let key = buildKey("debugProgram") else {
+            return Prompt.show("No program to debug", message: "The build didn't produce a program CodeForge could find. Open the project folder, or debug a single C, C++, Swift or Rust file.")
+        }
+        let panel = NSOpenPanel()
+        panel.message = "Choose the program to debug. CodeForge remembers it for this folder."
+        panel.directoryURL = workspaceURL
+        panel.treatsFilePackagesAsDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        defaults.set(url.path, forKey: key)
+        if thenStart { launchDebugger() }
+    }
+
+    @objc func toggleBreakpointAtCursor(_ sender: Any?) {
+        guard let current else { return }
+        toggleBreakpoint(in: current, line: current.cursorPosition.line)
+    }
+
+    private func toggleBreakpoint(in document: EditorDocument, line: Int) {
+        guard let url = document.url?.standardizedFileURL else { return NSSound.beep() }
+        var lines = breakpoints[url.path] ?? []
+        if lines.contains(line) { lines.remove(line) } else { lines.insert(line) }
+        breakpoints[url.path] = lines.isEmpty ? nil : lines
+        document.ruler.breakpoints = lines
+        debugSession?.sendBreakpoints(for: url, lines: lines)
+        saveBreakpoints()
+    }
+
+    @objc func deleteAllBreakpoints(_ sender: Any?) {
+        for (path, _) in breakpoints { debugSession?.sendBreakpoints(for: URL(fileURLWithPath: path), lines: []) }
+        breakpoints = [:]
+        documents.forEach { $0.ruler.breakpoints = [] }
+        saveBreakpoints()
+    }
+
+    private func saveBreakpoints() {
+        defaults.set(breakpoints.mapValues { Array($0) }, forKey: "breakpoints")
+    }
+
     #if DEBUG
     func documentForProbe(_ textView: CodeTextView) -> EditorDocument? { documents.first { $0.textView === textView } }
     func diagnosticsForProbe() -> [String] { liveDiagnostics.values.flatMap { $0 }.map { "\($0.line):\($0.column ?? 0) \($0.message)" } }
     #endif
 
     func stopAll() {
+        debugSession?.stop()
         runner.stop()
         panel.terminal.stop()
         documents.forEach { $0.session = nil }
@@ -864,7 +1081,14 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private func isEnabled(_ action: Selector?) -> Bool {
         switch action {
         case #selector(stopRunning(_:)): runner.isRunning
-        case #selector(runActiveFile(_:)): !isRunning
+        case #selector(runActiveFile(_:)): !isRunning && debugSession == nil
+        case #selector(startDebugging(_:)): (!isRunning && debugSession == nil) || debugSession?.state == .paused
+        case #selector(stopDebugging(_:)): debugSession != nil
+        case #selector(debugContinue(_:)), #selector(debugStepOver(_:)), #selector(debugStepInto(_:)), #selector(debugStepOut(_:)):
+            debugSession?.state == .paused
+        case #selector(debugPause(_:)): debugSession?.state == .running
+        case #selector(setDebugProgram(_:)), #selector(editBuildCommand(_:)): workspaceURL != nil
+        case #selector(deleteAllBreakpoints(_:)): !breakpoints.isEmpty
         case #selector(saveDocument(_:)), #selector(saveDocumentAs(_:)): current != nil
         case #selector(goToDefinition(_:)), #selector(findAllReferences(_:)), #selector(renameSymbol(_:)): current?.session != nil
         case #selector(saveAllDocuments(_:)): documents.contains { $0.isDirty }
@@ -877,6 +1101,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleExplorer(_:)) { menuItem.title = explorer.isHidden ? "Show Explorer" : "Hide Explorer" }
         if menuItem.action == #selector(toggleConsole(_:)) { menuItem.title = panel.isHidden ? "Show Panel" : "Hide Panel" }
+        if menuItem.action == #selector(startDebugging(_:)) { menuItem.title = debugSession?.state == .paused ? "Continue" : "Start Debugging" }
         if menuItem.action == #selector(toggleExplorerSide(_:)) { menuItem.title = explorerOnRight ? "Move Explorer to Left" : "Move Explorer to Right" }
         return isEnabled(menuItem.action)
     }

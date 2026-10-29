@@ -17,6 +17,9 @@ Releases.
   C#, Go, Rust, Ruby, PHP, Shell, Lua, SQL, HTML/XML, CSS, JSON, YAML, TOML, Markdown, Makefile and Dockerfile.
 - **IntelliSense.** Completions, quick info on hover, Go to Definition (F12 / ⌘-click), Find All References (⇧F12),
   Rename (F2) and live error squiggles, powered by standard language servers.
+- **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
+  Debug C, C++, Objective-C, Swift, Rust and Go with LLDB: breakpoints (F9), stepping (F10 / F11 / ⇧F11), Locals,
+  Call Stack and an expression evaluator.
 - **Run, then fix.** Press ⌘R to run. Output streams into the Output tab, and you can type input for programs that ask
   for it. Compiler and runtime errors appear in the **Error List**. Double-click one to jump to the line, which is
   underlined in the editor.
@@ -55,7 +58,11 @@ open dist/CodeForge.app
 | Quick Open (find a file by name) | ⌘P |
 | New file / Save / Save All | ⌘N / ⌘S / ⌥⌘S |
 | Close tab / next and previous tab | ⌘W / ⇧⌘] and ⇧⌘[ |
-| Run / Stop | ⌘R / ⌘. |
+| Start without debugging / Stop | ⌘R / ⌘. |
+| Build / Clean | ⇧⌘B / ⇧⌘K |
+| Start Debugging (or Continue) / Stop Debugging | F5 / ⇧F5 |
+| Toggle breakpoint | F9, or click the line-number margin |
+| Step Over / Step Into / Step Out | F10 / F11 / ⇧F11 |
 | Set the project's run command | ⇧⌘R |
 | Show or hide the explorer / bottom panel | ⌘B / ⇧⌘Y |
 | Output / Error List / Terminal | ⇧⌘U / ⇧⌘M / ⌃` |
@@ -84,6 +91,17 @@ CodeForge talks to standard language servers. The status bar shows which one is 
 
 Servers that CodeForge installs live in `~/Library/Application Support/<bundle id>/LanguageServers`. Find All
 References in Swift needs a built Swift package (the index comes from the build).
+
+### Debugging
+
+Press **F5**. CodeForge builds the project (or the current file) with debug information and starts it under LLDB,
+using `lldb-dap` from Xcode. When it stops at a breakpoint, the **Debug** tab shows local variables and the call stack,
+and you can evaluate expressions.
+
+The first time you debug, macOS asks for your password to allow a debugger to control the program (the same prompt
+Xcode shows). To skip that prompt for good, run `sudo DevToolsSecurity -enable` once in Terminal.
+
+If CodeForge can't tell which program the build made, it asks once (Debug ▸ Set Program to Debug…).
 
 ### How files run
 
