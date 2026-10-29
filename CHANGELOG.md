@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+
+- Python debugging no longer prints debugpy's internal "ptvsd" / "debugpy" messages in the Output.
+- Pressing the line-number margin with VoiceOver or other accessibility tools toggles a breakpoint, instead of opening a tab-stop dialog.
+
 ## 0.6.0
 
 - **Python debugging**: breakpoints, Step Over / Into / Out, Locals (expand objects, lists and dicts), Call Stack and Evaluate, using debugpy. The first time you debug Python, CodeForge offers to install debugpy (about 18 MB) into its own folder.

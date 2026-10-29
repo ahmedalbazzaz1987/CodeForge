@@ -989,7 +989,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard let command = PythonDebugging.installCommand else {
             return Prompt.show("Python wasn't found", message: "Install Python 3 (for example: brew install python), then try again.")
         }
-        guard Prompt.confirm("Install the Python debugger?", message: "CodeForge will use pip to download debugpy (about 10 MB) into its own folder. This happens once.",
+        guard Prompt.confirm("Install the Python debugger?", message: "CodeForge will use pip to download debugpy (about 20 MB) into its own folder. This happens once.",
                              button: "Install") else { return }
         afterBuild = launch
         start(command, in: FileManager.default.homeDirectoryForCurrentUser)

@@ -113,6 +113,15 @@ final class LineNumberRuler: NSRulerView {
         }
     }
 
+    // NSRulerView's own accessibility press opens a tab-stop editor; toggle a breakpoint on the cursor's line instead.
+    override func accessibilityPerformPress() -> Bool {
+        guard let textView else { return false }
+        onToggleBreakpoint?(line(at: textView.selectedRange().location) + 1)
+        return true
+    }
+
+    override func accessibilityLabel() -> String? { "Line numbers and breakpoints" }
+
     override func mouseDown(with event: NSEvent) {
         guard let textView, let layoutManager = textView.layoutManager, let container = textView.textContainer else { return }
         let point = textView.convert(event.locationInWindow, from: nil)

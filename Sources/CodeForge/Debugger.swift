@@ -199,6 +199,7 @@ final class DebugSession {
         case "output":
             guard let text = body["output"] as? String else { return }
             let category = body["category"] as? String ?? "console"
+            if category == "telemetry" { return }   // adapter-internal events (debugpy sends "ptvsd", "debugpy")
             onOutput?(text, category == "stderr" ? .error : category == "stdout" ? .output : .info)
         case "exited":
             let code = body["exitCode"] as? Int ?? 0
