@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- **Python debugging**: breakpoints, Step Over / Into / Out, Locals (expand objects, lists and dicts), Call Stack and Evaluate, using debugpy. The first time you debug Python, CodeForge offers to install debugpy (about 18 MB) into its own folder.
+- Update notes in the "new version available" window no longer show Markdown symbols.
+
 ## 0.5.1
 
 - Debug tab: an **Evaluate** button next to the expression field, and results show just the value (`= 30`).

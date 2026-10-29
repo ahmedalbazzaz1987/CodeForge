@@ -18,8 +18,8 @@ Releases.
 - **IntelliSense.** Completions, quick info on hover, Go to Definition (F12 / ⌘-click), Find All References (⇧F12),
   Rename (F2) and live error squiggles, powered by standard language servers.
 - **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
-  Debug C, C++, Objective-C, Swift, Rust and Go with LLDB: breakpoints (F9), stepping (F10 / F11 / ⇧F11), Locals,
-  Call Stack and an expression evaluator.
+  Debug Python (debugpy) and C, C++, Objective-C, Swift, Rust and Go (LLDB): breakpoints (F9), stepping
+  (F10 / F11 / ⇧F11), Locals, Call Stack and an expression evaluator.
 - **Git built in.** A Git Changes panel to stage, commit, switch branches, pull and push, diffs and history, and the
   branch in the status bar. **CodeLens** shows reference counts and who last changed each function.
 - **Run, then fix.** Press ⌘R to run. Output streams into the Output tab, and you can type input for programs that ask
@@ -97,11 +97,12 @@ References in Swift needs a built Swift package (the index comes from the build)
 
 ### Debugging
 
-Press **F5**. CodeForge builds the project (or the current file) with debug information and starts it under LLDB,
-using `lldb-dap` from Xcode. When it stops at a breakpoint, the **Debug** tab shows local variables and the call stack,
+Press **F5**. For Python files, CodeForge runs the script under [debugpy](https://github.com/microsoft/debugpy); the
+first time, it offers to install debugpy into its own folder (it needs `python3`). For compiled languages, it builds the
+project (or the current file) with debug information and starts it under LLDB, using `lldb-dap` from Xcode. When it stops at a breakpoint, the **Debug** tab shows local variables and the call stack,
 and you can evaluate expressions.
 
-The first time you debug, macOS asks for your password to allow a debugger to control the program (the same prompt
+The first time you debug a compiled program, macOS asks for your password to allow a debugger to control the program (the same prompt
 Xcode shows). To skip that prompt for good, run `sudo DevToolsSecurity -enable` once in Terminal.
 
 If CodeForge can't tell which program the build made, it asks once (Debug ▸ Set Program to Debug…).

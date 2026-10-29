@@ -965,11 +965,35 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     @objc func startDebugging(_ sender: Any?) {
         if let debugSession, debugSession.state == .paused { return debugSession.resume() }
         guard debugSession == nil, !isRunning else { return }
-        if let language = current?.language.id, ["python", "javascript", "typescript", "ruby", "php", "shell"].contains(language), buildPlan()?.program == nil {
+        if current?.language.id == "python" { return startPythonDebugging() }
+        if let language = current?.language.id, ["javascript", "typescript", "ruby", "php", "shell"].contains(language), buildPlan()?.program == nil {
             return Prompt.show("Debugging isn't available for \(current!.language.name) yet",
-                               message: "CodeForge debugs compiled programs (C, C++, Objective-C, Swift, Rust and Go) with LLDB. Use Start (⌘R) to run this file.")
+                               message: "CodeForge debugs Python, and compiled programs (C, C++, Objective-C, Swift, Rust and Go) with LLDB. Use Start (⌘R) to run this file.")
         }
         build { [weak self] in self?.launchDebugger() }
+    }
+
+    /// Python runs under debugpy; it's installed (once, with the user's OK) the first time.
+    private func startPythonDebugging() {
+        guard let document = current else { return }
+        guard document.url != nil || saveAs(document), let file = document.url else { return }
+        saveAllDocuments(nil)
+        let folder = workspaceURL.flatMap { file.path.hasPrefix($0.path + "/") ? $0 : nil } ?? file.deletingLastPathComponent()
+        let launch = { [weak self] in
+            guard let self, let configuration = DebugConfiguration.python(file: file, folder: folder) else {
+                return Prompt.show("Couldn't start the Python debugger", message: "CodeForge needs python3 and the debugpy package.")
+            }
+            startSession(configuration, title: file.lastPathComponent)
+        }
+        if PythonDebugging.isInstalled { return launch() }
+        guard let command = PythonDebugging.installCommand else {
+            return Prompt.show("Python wasn't found", message: "Install Python 3 (for example: brew install python), then try again.")
+        }
+        guard Prompt.confirm("Install the Python debugger?", message: "CodeForge will use pip to download debugpy (about 10 MB) into its own folder. This happens once.",
+                             button: "Install") else { return }
+        afterBuild = launch
+        start(command, in: FileManager.default.homeDirectoryForCurrentUser)
+        runStatus.stringValue = "Installing debugpy…"
     }
 
     private func launchDebugger() {
@@ -977,17 +1001,24 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard let path = customProgram ?? buildPlan()?.program, FileManager.default.isExecutableFile(atPath: path) else {
             return chooseDebugProgram(thenStart: true)
         }
-        let session = DebugSession(program: URL(fileURLWithPath: path))
+        let folder = workspaceURL ?? URL(fileURLWithPath: path).deletingLastPathComponent()
+        guard let configuration = DebugConfiguration.lldb(program: URL(fileURLWithPath: path), folder: folder) else {
+            return Prompt.show("Couldn't start the debugger", message: "CodeForge uses lldb-dap from Xcode. Install Xcode, then run: xcode-select -s /Applications/Xcode.app")
+        }
+        startSession(configuration, title: path)
+    }
+
+    private func startSession(_ configuration: DebugConfiguration, title: String) {
+        let session = DebugSession(configuration)
         session.breakpoints = { [weak self] in
             Dictionary(uniqueKeysWithValues: (self?.breakpoints ?? [:]).map { (URL(fileURLWithPath: $0.key), $0.value) })
         }
         session.onOutput = { [weak self] text, kind in self?.console.append(text, kind) }
         session.onStopped = { [weak self] in self?.debuggerStopped() }
         session.onStateChange = { [weak self] in self?.debugStateChanged() }
-        let folder = workspaceURL ?? URL(fileURLWithPath: path).deletingLastPathComponent()
-        console.append("\nDebugging \(path)\n", .info)
-        guard session.start(arguments: [], folder: folder) else {
-            return Prompt.show("Couldn't start the debugger", message: "CodeForge uses lldb-dap from Xcode. Install Xcode, then run: xcode-select -s /Applications/Xcode.app")
+        console.append("\nDebugging \(title)\n", .info)
+        guard session.start() else {
+            return Prompt.show("Couldn't start the debugger", message: "The debug adapter (\(configuration.adapter.lastPathComponent)) didn't start.")
         }
         debugSession = session
         panel.debug.session = session

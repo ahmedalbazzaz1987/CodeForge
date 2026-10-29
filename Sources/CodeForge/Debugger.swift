@@ -24,9 +24,11 @@ final class DebugAdapter {
         return finder.terminationStatus == 0 && !path.isEmpty ? URL(fileURLWithPath: path) : nil
     }
 
-    func start(_ executable: URL) -> Bool {
+    func start(_ executable: URL, arguments: [String] = [], environment: [String: String]? = nil) -> Bool {
         let input = Pipe(), output = Pipe()
         process.executableURL = executable
+        process.arguments = arguments
+        if let environment { process.environment = environment }
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -76,7 +78,56 @@ final class DebugAdapter {
     }
 }
 
-/// One debugging run: launches the program under LLDB and tracks where it stopped.
+/// Which debug adapter to start and how to launch the program with it.
+struct DebugConfiguration {
+    let adapter: URL
+    var adapterArguments: [String] = []
+    var environment: [String: String]?
+    let adapterID: String
+    let launch: [String: Any]
+    /// LLDB needs macOS's permission to control another process; debugpy doesn't.
+    var needsDeveloperAccess = false
+
+    /// Compiled programs (C, C++, Objective-C, Swift, Rust, Go) with Xcode's lldb-dap.
+    static func lldb(program: URL, folder: URL) -> DebugConfiguration? {
+        guard let adapter = DebugAdapter.executable() else { return nil }
+        return DebugConfiguration(adapter: adapter, adapterID: "lldb-dap",
+                                  launch: ["program": program.path, "args": [String](), "cwd": folder.path, "stopOnEntry": false],
+                                  needsDeveloperAccess: true)
+    }
+
+    /// Python scripts with debugpy, installed into CodeForge's own folder.
+    static func python(file: URL, folder: URL) -> DebugConfiguration? {
+        guard let python = PythonDebugging.python, PythonDebugging.isInstalled else { return nil }
+        var environment = LanguageServerManager.environment
+        environment["PYTHONPATH"] = PythonDebugging.installDirectory.path
+        return DebugConfiguration(adapter: python, adapterArguments: ["-m", "debugpy.adapter"], environment: environment, adapterID: "debugpy",
+                                  launch: ["type": "python", "request": "launch", "program": file.path, "cwd": folder.path,
+                                           "python": python.path, "console": "internalConsole", "justMyCode": true,
+                                           "redirectOutput": true, "stopOnEntry": false, "env": ["PYTHONUNBUFFERED": "1"]])
+    }
+}
+
+/// Finding Python and installing debugpy for Python debugging.
+enum PythonDebugging {
+    static let installDirectory = LanguageServerManager.installDirectory.deletingLastPathComponent().appendingPathComponent("debugpy")
+
+    static var python: URL? {
+        ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }.map { URL(fileURLWithPath: $0) }
+    }
+
+    static var isInstalled: Bool {
+        FileManager.default.fileExists(atPath: installDirectory.appendingPathComponent("debugpy/__init__.py").path)
+    }
+
+    /// Installs debugpy for the same Python that will run the program.
+    static var installCommand: String? {
+        python.map { "\(CommandTemplate.shellQuote($0.path)) -m pip install --disable-pip-version-check --upgrade --target \(CommandTemplate.shellQuote(installDirectory.path)) debugpy" }
+    }
+}
+
+/// One debugging run: launches the program under a debug adapter and tracks where it stopped.
 final class DebugSession {
     struct Frame {
         let id: Int
@@ -92,29 +143,29 @@ final class DebugSession {
     private(set) var threadId = 0
     private(set) var frames: [Frame] = []
     private(set) var stopReason = ""
-    let program: URL
+    let configuration: DebugConfiguration
     var breakpoints: () -> [URL: Set<Int>] = { [:] }
 
     var onStateChange: (() -> Void)?
     var onOutput: ((String, ConsoleView.Kind) -> Void)?
     var onStopped: (() -> Void)?
 
-    init(program: URL) {
-        self.program = program
+    init(_ configuration: DebugConfiguration) {
+        self.configuration = configuration
     }
 
-    func start(arguments: [String], folder: URL) -> Bool {
-        guard let executable = DebugAdapter.executable(), adapter.start(executable) else { return false }
+    func start() -> Bool {
+        guard adapter.start(configuration.adapter, arguments: configuration.adapterArguments, environment: configuration.environment) else { return false }
         adapter.onEvent = { [weak self] event, body in self?.handle(event, body) }
         adapter.onExit = { [weak self] in self?.state = .ended }
         adapter.request("initialize", [
-            "clientID": "codeforge", "clientName": "CodeForge", "adapterID": "lldb-dap",
+            "clientID": "codeforge", "clientName": "CodeForge", "adapterID": configuration.adapterID,
             "linesStartAt1": true, "columnsStartAt1": true, "pathFormat": "path",
             "supportsVariableType": true, "supportsRunInTerminalRequest": false,
         ])
         // macOS asks for permission the first time a debugger controls a program; explain if the launch stalls.
         DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
-            guard let self, state == .starting else { return }
+            guard let self, state == .starting, configuration.needsDeveloperAccess else { return }
             onOutput?("""
 
                 The debugger is waiting for macOS to allow it to control the program.
@@ -123,7 +174,7 @@ final class DebugSession {
 
                 """, .error)
         }
-        adapter.request("launch", ["program": program.path, "args": arguments, "cwd": folder.path, "stopOnEntry": false]) { [weak self] response in
+        adapter.request("launch", configuration.launch) { [weak self] response in
             if response["success"] as? Bool == false {
                 self?.onOutput?("Couldn't start debugging: \(response["message"] as? String ?? "unknown error")\n", .error)
                 self?.stop()
