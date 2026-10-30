@@ -120,8 +120,38 @@ public enum Languages {
                 true try typeof uint ulong unchecked unsafe ushort using var virtual void volatile while async await get \
                 set init record yield
                 """,
-            patterns: [preprocessor],
-            runCommand: "dotnet run {file}", installHint: "Install the .NET SDK with `brew install --cask dotnet-sdk`."
+            patterns: [preprocessor, (#"\[[A-Z]\w*(?:\([^)\n]*\))?\]"#, .attribute)],
+            runCommand: "dotnet run {file}", installHint: "Install the .NET SDK with `brew install dotnet`."
+        ),
+        Language(
+            id: "vb", name: "VB.NET", extensions: ["vb", "vbs"],
+            lineComments: ["'", "REM "], strings: ["\""],
+            keywords: """
+                AddHandler AddressOf Alias And AndAlso As Boolean ByRef Byte ByVal Call Case Catch CBool CByte CChar CDate                 CDbl CDec Char CInt Class CLng CObj Const Continue CSByte CShort CSng CStr CType CUInt CULng CUShort Date                 Decimal Declare Default Delegate Dim DirectCast Do Double Each Else ElseIf End Enum Erase Error Event Exit                 False Finally For Friend Function Get GetType Global GoTo Handles If Implements Imports In Inherits Integer                 Interface Is IsNot Let Lib Like Long Loop Me Mod Module MustInherit MustOverride MyBase MyClass NameOf                 Namespace Narrowing New Next Not Nothing NotInheritable NotOverridable Object Of On Operator Option Optional                 Or OrElse Overloads Overridable Overrides ParamArray Partial Private Property Protected Public RaiseEvent                 ReadOnly ReDim RemoveHandler Resume Return SByte Select Set Shadows Shared Short Single Static Step Stop                 String Structure Sub SyncLock Then Throw To True Try TryCast TypeOf UInteger ULong UShort Using When While                 Widening With WithEvents WriteOnly Xor Async Await Iterator Yield
+                """,
+            caseInsensitiveKeywords: true, capitalizedTypes: false,
+            patterns: [(#"^[ \t]*#\w+"#, .attribute), (#"<[A-Z]\w*(?:\([^)\n]*\))?>"#, .attribute)],
+            installHint: "Install the .NET SDK with `brew install dotnet`."
+        ),
+        Language(
+            id: "razor", name: "Razor (ASP.NET)", extensions: ["cshtml", "razor", "vbhtml"],
+            blockComment: ("@*", "*@"), capitalizedTypes: false, highlightNumbers: false,
+            patterns: [
+                (#"<!--[\s\S]*?(?:-->|\z)"#, .comment),
+                (#"@(?:page|model|using|inject|inherits|implements|layout|namespace|code|functions|section|if|else|foreach|for|while|switch|try|catch|await|addTagHelper)\b"#, .keyword),
+                (#"@[A-Za-z_][\w.]*(?:\([^)\n]*\))?"#, .attribute),
+                (#"</?[A-Za-z][\w:.-]*|/?>"#, .tag),
+                (#"\basp-[\w-]+(?==)"#, .keyword),
+                (#"\b[\w:-]+(?==)"#, .attribute),
+            ]
+        ),
+        Language(
+            id: "fsharp", name: "F#", extensions: ["fs", "fsx", "fsi"],
+            lineComments: ["//"], blockComment: ("(*", "*)"), strings: ["\"\"\"", "\""],
+            keywords: """
+                abstract and as assert base begin class default delegate do done downcast downto elif else end exception                 extern false finally for fun function global if in inherit inline interface internal lazy let match member                 module mutable namespace new not null of open or override private public rec return sig static struct then                 to true try type upcast use val void when while with yield async printfn
+                """,
+            runCommand: "dotnet fsi {file}", installHint: "Install the .NET SDK with `brew install dotnet`."
         ),
         Language(
             id: "go", name: "Go", extensions: ["go"],
@@ -199,7 +229,8 @@ public enum Languages {
             runCommand: "sqlite3 -box < {file}"
         ),
         Language(
-            id: "html", name: "HTML / XML", extensions: ["html", "htm", "xhtml", "xml", "svg", "plist", "vue"],
+            id: "html", name: "HTML / XML", extensions: ["html", "htm", "xhtml", "xml", "svg", "plist", "vue", "csproj", "vbproj", "fsproj",
+                                                            "props", "targets", "slnx", "config", "xaml", "resx", "nuspec"],
             blockComment: ("<!--", "-->"), capitalizedTypes: false, highlightNumbers: false,
             patterns: [(#"</?[A-Za-z][\w:.-]*|/?>"#, .tag), (#"\b[\w:-]+(?==)"#, .attribute), (#"&#?\w+;"#, .number)],
             runCommand: "open {file}"

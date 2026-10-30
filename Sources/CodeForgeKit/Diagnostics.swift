@@ -38,7 +38,8 @@ public enum DiagnosticParser {
     }
 
     private static let compiler = regex(#"^((?=[^:\n]*[./])[^\s:][^:\n]*?):(\d+):(?:(\d+):)?\s*(?:(fatal error|error|warning|note)\s*(?:\[[^\]]*\])?:)?\s*(.+)$"#)
-    private static let typescript = regex(#"^([^\s(][^(\n]*\.\w+)\((\d+),(\d+)\):\s*(error|warning)\s*(?:TS\d+)?:?\s*(.+)$"#)
+    /// TypeScript and MSBuild (.NET): `file(line,col): error CODE: message [project]`
+    private static let typescript = regex(#"^\s*([^\s(][^(\n]*\.\w+)\((\d+),(\d+)\):\s*(error|warning)\s*(?:[A-Z]+\d+)?:?\s*(.+?)(?:\s+\[[^\]\n]+\])?$"#)
     private static let rustHeader = regex(#"^(error|warning)(?:\[\w+\])?: (.+)$"#)
     private static let rustLocation = regex(#"^\s*--> ([^:\n]+):(\d+):(\d+)"#)
     private static let pythonFrame = regex(#"^\s*File "([^"]+)", line (\d+)"#)

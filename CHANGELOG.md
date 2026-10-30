@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+
+.NET: VB.NET, C# and ASP.NET Core.
+
+- **New Project** has .NET templates: ASP.NET Core Web App (Razor Pages), ASP.NET Core MVC, ASP.NET Core Web API, Blazor Web App, Console App and Class Library in **VB.NET** and **C#**. They're created with `dotnet new` (needs the .NET SDK: `brew install dotnet`).
+- Syntax highlighting for **VB.NET**, **Razor** (`.cshtml`, `.razor`) and **F#**; project files (`.csproj`, `.vbproj`, `.slnx`, `.xaml`) are highlighted as XML.
+- **Start** runs the whole project, like Visual Studio's startup project: `dotnet run` for .NET, and also `swift run`, `cargo run`, `go run .` and `npm start` for those project types. The Start button shows the project's name.
+- ASP.NET sites open in your browser as soon as the server is ready.
+- **Build** detects solutions and projects (`.sln`, `.slnx`, `.csproj`, `.vbproj`, `.fsproj`) and puts MSBuild errors (C#, VB.NET) in the Error List.
+- **C# IntelliSense** with csharp-ls, installed with one click from the status bar.
+
 ## 0.6.1
 
 - Python debugging no longer prints debugpy's internal "ptvsd" / "debugpy" messages in the Output.

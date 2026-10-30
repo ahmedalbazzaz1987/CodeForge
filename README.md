@@ -13,8 +13,10 @@ Releases.
   status bar (blue when ready, orange while running).
 - **Start fast.** File ▸ New Project… creates a ready-to-run project for Python, C, C++, Swift, Node.js, TypeScript,
   web pages, Go, Rust or Java. You can also clone a Git repository straight from the Start page.
+- **.NET.** VB.NET, C# and ASP.NET Core: New Project templates (Razor Pages, MVC, Web API, Blazor, console and class
+  libraries), Build and Start with `dotnet`, MSBuild errors in the Error List, and C# IntelliSense.
 - **Many languages.** Syntax highlighting for Swift, Python, JavaScript, TypeScript, C, C++, Objective-C, Java, Kotlin,
-  C#, Go, Rust, Ruby, PHP, Shell, Lua, SQL, HTML/XML, CSS, JSON, YAML, TOML, Markdown, Makefile and Dockerfile.
+  C#, VB.NET, F#, Razor, Go, Rust, Ruby, PHP, Shell, Lua, SQL, HTML/XML, CSS, JSON, YAML, TOML, Markdown, Makefile and Dockerfile.
 - **IntelliSense.** Completions, quick info on hover, Go to Definition (F12 / ⌘-click), Find All References (⇧F12),
   Rename (F2) and live error squiggles, powered by standard language servers.
 - **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
@@ -89,6 +91,7 @@ CodeForge talks to standard language servers. The status bar shows which one is 
 | C, C++, Objective-C | clangd | Included with Xcode |
 | Python | Pyright | Click **Install Python IntelliSense…** in the status bar (needs Node.js) |
 | JavaScript, TypeScript | TypeScript 7 (`tsc --lsp`) | Click **Install … IntelliSense…** in the status bar (needs Node.js) |
+| C# | csharp-ls | Click **Install C# IntelliSense…** in the status bar (needs the .NET SDK) |
 | Go | gopls | `go install golang.org/x/tools/gopls@latest` |
 | Rust | rust-analyzer | `rustup component add rust-analyzer` |
 
@@ -116,6 +119,16 @@ and push. Pushing uses your usual Git credentials (for GitHub, the macOS keychai
 
 CodeLens hints appear after functions and types once a file is saved. Reference counts come from the language server
 (IntelliSense must be on for that language) and the author and time come from `git blame`.
+
+### .NET (VB.NET, C#, ASP.NET Core)
+
+Install the .NET SDK once (`brew install dotnet`). Then use **File ▸ New Project…** and pick an ASP.NET Core or
+VB.NET/C# template. **Start** (⌘R) runs `dotnet run` for the project, and web apps open in your browser. Build errors from
+C# and VB.NET appear in the Error List.
+
+ASP.NET Core uses C# for pages and APIs; VB.NET works for console apps and class libraries. Classic ASP.NET Web Forms
+(`.aspx`) and Windows Forms/WPF designers need Windows, so they aren't available on a Mac. Debugging .NET code isn't
+supported yet.
 
 ### How files run
 

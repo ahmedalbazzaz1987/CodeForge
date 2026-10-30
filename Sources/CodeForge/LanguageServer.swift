@@ -193,7 +193,8 @@ final class LanguageServerManager {
 
     private static let searchFolders: [String] = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return [installDirectory.appendingPathComponent("node_modules/.bin").path, "/opt/homebrew/bin", "/usr/local/bin",
+        return [installDirectory.appendingPathComponent("node_modules/.bin").path, installDirectory.appendingPathComponent("dotnet-tools").path,
+                "/opt/homebrew/bin", "/usr/local/bin", home + "/.dotnet/tools",
                 home + "/.cargo/bin", home + "/go/bin", home + "/.local/bin", "/usr/bin"]
     }()
 
@@ -201,6 +202,11 @@ final class LanguageServerManager {
     static let environment: [String: String] = {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = (searchFolders + [environment["PATH"] ?? ""]).joined(separator: ":")
+        // .NET tools installed with Homebrew's SDK need to be told where the runtime is.
+        if environment["DOTNET_ROOT"] == nil {
+            environment["DOTNET_ROOT"] = ["/opt/homebrew/opt/dotnet/libexec", "/usr/local/share/dotnet", "/usr/local/opt/dotnet/libexec"]
+                .first { FileManager.default.fileExists(atPath: $0) }
+        }
         return environment
     }()
 
@@ -234,6 +240,10 @@ final class LanguageServerManager {
 
     /// The shell command that installs a server's npm packages, or nil if CodeForge can't install it.
     func installCommand(for spec: LanguageServerSpec) -> String? {
+        if let tool = spec.dotnetTool {
+            let folder = CommandTemplate.shellQuote(Self.installDirectory.appendingPathComponent("dotnet-tools").path)
+            return "dotnet tool update --tool-path \(folder) \(tool) || dotnet tool install --tool-path \(folder) \(tool)"
+        }
         guard !spec.npmPackages.isEmpty else { return nil }
         let folder = CommandTemplate.shellQuote(Self.installDirectory.path)
         return "mkdir -p \(folder) && cd \(folder) && npm install --no-fund --no-audit --loglevel=error " + spec.npmPackages.joined(separator: " ")

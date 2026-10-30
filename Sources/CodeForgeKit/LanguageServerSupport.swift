@@ -85,10 +85,13 @@ public struct LanguageServerSpec: Sendable {
     public let installedCopyOnly: Bool
     /// npm packages CodeForge can install for this server (empty when it has to be installed another way).
     public let npmPackages: [String]
+    /// A .NET tool CodeForge can install for this server (`dotnet tool install`).
+    public let dotnetTool: String?
     public let installHint: String
 
     public init(id: String, name: String, languages: [String], executables: [String], arguments: [String] = [],
-                viaXcrun: Bool = false, installedCopyOnly: Bool = false, npmPackages: [String] = [], installHint: String) {
+                viaXcrun: Bool = false, installedCopyOnly: Bool = false, npmPackages: [String] = [], dotnetTool: String? = nil,
+                installHint: String) {
         self.id = id
         self.name = name
         self.languages = languages
@@ -97,6 +100,7 @@ public struct LanguageServerSpec: Sendable {
         self.viaXcrun = viaXcrun
         self.installedCopyOnly = installedCopyOnly
         self.npmPackages = npmPackages
+        self.dotnetTool = dotnetTool
         self.installHint = installHint
     }
 }
@@ -114,6 +118,8 @@ public enum LanguageServerSpecs {
         LanguageServerSpec(id: "typescript", name: "TypeScript", languages: ["javascript", "typescript"], executables: ["tsc"],
                            arguments: ["--lsp", "--stdio"], installedCopyOnly: true, npmPackages: ["typescript@7"],
                            installHint: "CodeForge can install it for you (needs Node.js: brew install node)."),
+        LanguageServerSpec(id: "csharp-ls", name: "csharp-ls", languages: ["csharp"], executables: ["csharp-ls"], dotnetTool: "csharp-ls",
+                           installHint: "CodeForge can install it for you (needs the .NET SDK: brew install dotnet)."),
         LanguageServerSpec(id: "gopls", name: "gopls", languages: ["go"], executables: ["gopls"],
                            installHint: "Install it with: go install golang.org/x/tools/gopls@latest"),
         LanguageServerSpec(id: "rust-analyzer", name: "rust-analyzer", languages: ["rust"], executables: ["rust-analyzer"],

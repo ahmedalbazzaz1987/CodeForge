@@ -96,7 +96,7 @@ final class DiagnosticsAndTemplatesTests: XCTestCase {
     func testTemplatesCreateFiles() throws {
         let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: parent) }
-        for template in ProjectTemplates.all {
+        for template in ProjectTemplates.general {
             let folder = try ProjectTemplates.create(template, named: "My App \(template.id)", in: parent)
             let main = folder.appendingPathComponent(ProjectTemplates.mainFile(of: template, named: "My App \(template.id)"))
             XCTAssertTrue(FileManager.default.fileExists(atPath: main.path), template.id)

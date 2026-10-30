@@ -14,10 +14,53 @@ public struct ProjectTemplate: Sendable {
     public let mainFile: String
     /// Project run command; nil runs the current file.
     public let runCommand: String?
+    /// A shell command that creates the project instead of `files` (run in the parent folder).
+    /// `{{folder}}` is the new folder's name, `{{ident}}` the identifier form of the name.
+    public var command: String? = nil
+    /// The group shown in New Project.
+    public var group: String = "General"
 }
 
 public enum ProjectTemplates {
-    public static let all: [ProjectTemplate] = [
+    public static let all: [ProjectTemplate] = dotnet + general
+
+    /// .NET templates, created with `dotnet new` (needs the .NET SDK).
+    public static let dotnet: [ProjectTemplate] = [
+        ProjectTemplate(id: "aspnet-razor", name: "ASP.NET Core Web App (Razor Pages)",
+                        summary: "A web site with Razor Pages, opened in your browser when you press Start.",
+                        tags: "C#  ASP.NET  Web", symbol: "globe.americas", files: [:], mainFile: "Pages/Index.cshtml", runCommand: nil,
+                        command: "dotnet new webapp -o {{folder}} -n {{ident}}", group: ".NET"),
+        ProjectTemplate(id: "aspnet-mvc", name: "ASP.NET Core Web App (Model-View-Controller)",
+                        summary: "A web site with controllers and views (MVC).",
+                        tags: "C#  ASP.NET  Web", symbol: "square.stack.3d.up", files: [:], mainFile: "Controllers/HomeController.cs", runCommand: nil,
+                        command: "dotnet new mvc -o {{folder}} -n {{ident}}", group: ".NET"),
+        ProjectTemplate(id: "aspnet-api", name: "ASP.NET Core Web API",
+                        summary: "An HTTP API with OpenAPI support.",
+                        tags: "C#  ASP.NET  API", symbol: "server.rack", files: [:], mainFile: "Program.cs", runCommand: nil,
+                        command: "dotnet new webapi -o {{folder}} -n {{ident}}", group: ".NET"),
+        ProjectTemplate(id: "blazor", name: "Blazor Web App",
+                        summary: "Interactive web UI built with C# and Razor components.",
+                        tags: "C#  Blazor  Web", symbol: "flame", files: [:], mainFile: "Components/Pages/Home.razor", runCommand: nil,
+                        command: "dotnet new blazor -o {{folder}} -n {{ident}}", group: ".NET"),
+        ProjectTemplate(id: "vb-console", name: "Console App (VB.NET)",
+                        summary: "A Visual Basic .NET command-line program.",
+                        tags: "VB.NET  Console", symbol: "v.square", files: [:], mainFile: "Program.vb", runCommand: nil,
+                        command: "dotnet new console -lang VB -o {{folder}} -n {{ident}}", group: ".NET"),
+        ProjectTemplate(id: "vb-library", name: "Class Library (VB.NET)",
+                        summary: "A Visual Basic .NET library of classes to share between projects.",
+                        tags: "VB.NET  Library", symbol: "books.vertical", files: [:], mainFile: "Class1.vb", runCommand: nil,
+                        command: "dotnet new classlib -lang VB -o {{folder}} -n {{ident}}", group: ".NET"),
+        ProjectTemplate(id: "cs-console", name: "Console App (C#)",
+                        summary: "A C# command-line program.",
+                        tags: "C#  Console", symbol: "number.square", files: [:], mainFile: "Program.cs", runCommand: nil,
+                        command: "dotnet new console -o {{folder}} -n {{ident}}", group: ".NET"),
+        ProjectTemplate(id: "cs-library", name: "Class Library (C#)",
+                        summary: "A C# library of classes to share between projects.",
+                        tags: "C#  Library", symbol: "books.vertical.fill", files: [:], mainFile: "Class1.cs", runCommand: nil,
+                        command: "dotnet new classlib -o {{folder}} -n {{ident}}", group: ".NET"),
+    ]
+
+    public static let general: [ProjectTemplate] = [
         ProjectTemplate(
             id: "python", name: "Python Console App", summary: "A Python 3 program that runs in the Output panel.",
             tags: "Python", symbol: "chevron.left.forwardslash.chevron.right",
@@ -254,6 +297,14 @@ public enum ProjectTemplates {
             try fill(contents).write(to: file, atomically: true, encoding: .utf8)
         }
         return folder
+    }
+
+    /// The shell command that creates a `dotnet new`-style template, with the name filled in.
+    public static func creationCommand(for template: ProjectTemplate, named name: String) -> String? {
+        template.command.map {
+            $0.replacingOccurrences(of: "{{folder}}", with: CommandTemplate.shellQuote(name))
+                .replacingOccurrences(of: "{{ident}}", with: identifier(for: name))
+        }
     }
 
     public static func mainFile(of template: ProjectTemplate, named name: String) -> String {

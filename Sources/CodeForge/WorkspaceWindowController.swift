@@ -311,7 +311,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             console.append(line + "\n", .input)
             runner.send(line)
         }
-        runner.onOutput = { [weak self] text, kind in self?.console.append(text, kind) }
+        runner.onOutput = { [weak self] text, kind in
+            self?.console.append(text, kind)
+            self?.openBrowserIfServerStarted(text)
+        }
         panel.onHide = { [weak self] in self?.setConsoleVisible(false) }
         panel.references.onOpen = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
         intelliSense.document = { [weak self] textView in self?.documents.first { $0.textView === textView } }
@@ -566,7 +569,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     /// The Start button names what ⌘R will run; the status bar is orange while running, purple with no folder.
     private func updateRunChrome() {
         let custom = customCommandKey.flatMap { defaults.string(forKey: $0) }
-        startButton.title = " " + (custom != nil ? workspaceURL!.lastPathComponent : current?.displayName ?? "Start")
+        let project = custom == nil ? projectRunPlan : nil
+        startButton.title = " " + (custom != nil ? workspaceURL!.lastPathComponent
+            : project.map { _ in workspaceURL!.lastPathComponent } ?? current?.displayName ?? "Start")
+        startButton.toolTip = project.map { "Start \($0.name): \($0.run ?? "") (⌘R)" } ?? "Start (⌘R)"
         startButton.isEnabled = !isRunning && (custom != nil || current != nil)
         let debugging = debugSession != nil
         statusBar.color = isRunning || debugging ? Theme.statusBusy : (workspaceURL == nil ? Theme.statusIdle : Theme.accent)
@@ -601,8 +607,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard let command = LanguageServerManager.shared.installCommand(for: spec) else {
             return Prompt.show("\(spec.name) isn't installed", message: spec.installHint, style: .informational)
         }
-        guard Prompt.confirm("Install \(spec.name)?", message: "CodeForge will run npm to download \(spec.npmPackages.joined(separator: ", ")) "
-                             + "into its own folder (about 50 MB). You need Node.js (brew install node).", button: "Install") else { return }
+        let message = spec.dotnetTool != nil
+            ? "CodeForge will use the .NET SDK to download \(spec.name) into its own folder (about 30 MB)."
+            : "CodeForge will run npm to download \(spec.npmPackages.joined(separator: ", ")) into its own folder (about 50 MB). You need Node.js (brew install node)."
+        guard Prompt.confirm("Install \(spec.name)?", message: message, button: "Install") else { return }
         pendingInstall = spec
         start(command, in: FileManager.default.homeDirectoryForCurrentUser)
     }
@@ -755,6 +763,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             saveAllDocuments(nil)
             return start(command, in: folder)
         }
+        // Like Visual Studio's startup project: Start runs the whole project when the file belongs to it.
+        if let plan = projectRunPlan, let run = plan.run {
+            saveAllDocuments(nil)
+            runningLanguage = nil
+            return start(run, in: URL(fileURLWithPath: plan.folder))
+        }
         guard let document = current else {
             return Prompt.show("Nothing to run", message: "Open a file, or choose Run ▸ Set Run Command… to run a command for this folder.")
         }
@@ -771,6 +785,27 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     private var runningLanguage: Language?
+    private var openedBrowserForRun = false
+
+    /// The detected project, when Start should run it instead of the current file.
+    private var projectRunPlan: BuildPlan? {
+        guard let workspaceURL, let plan = BuildSystem.detect(in: workspaceURL), plan.run != nil else { return nil }
+        guard let current else { return plan }
+        return plan.languages.contains(current.language.id) ? plan : nil
+    }
+
+    /// ASP.NET (and other web servers) print the address they listen on; open it once, like Visual Studio does.
+    private func openBrowserIfServerStarted(_ text: String) {
+        guard !openedBrowserForRun, let range = text.range(of: #"Now listening on: (http://[^\s]+)"#, options: .regularExpression) else { return }
+        let address = text[range].replacingOccurrences(of: "Now listening on: ", with: "")
+        guard let url = URL(string: address.replacingOccurrences(of: "[::]", with: "localhost").replacingOccurrences(of: "0.0.0.0", with: "localhost")) else { return }
+        openedBrowserForRun = true
+        console.append("Opening \(url.absoluteString) in your browser…\n", .info)
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CF_NO_BROWSER"] != nil { return }
+        #endif
+        NSWorkspace.shared.open(url)
+    }
 
     private func start(_ command: String, in folder: URL) {
         runningLanguage = defaults.string(forKey: customCommandKey ?? "")?.isEmpty == false ? nil : current?.language
@@ -780,6 +815,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         console.append("$ \(command)\n", .info)
         runStatus.stringValue = "Running…"
         runFolder = folder
+        openedBrowserForRun = false
         isRunning = true
         runDiagnostics = []
         refreshDiagnostics()
@@ -845,6 +881,21 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard let window else { return }
         NewProjectSheet { [weak self] template, name, location in
             guard let self else { return }
+            if let command = ProjectTemplates.creationCommand(for: template, named: name) {
+                // .NET templates come from `dotnet new`; open the project once it has been created.
+                let folder = location.appendingPathComponent(name)
+                guard !FileManager.default.fileExists(atPath: folder.path) else {
+                    return Prompt.show("“\(name)” already exists", message: "Choose a different name or location.")
+                }
+                afterBuild = { [weak self] in
+                    self?.setWorkspace(folder)
+                    self?.open(folder.appendingPathComponent(ProjectTemplates.mainFile(of: template, named: name)))
+                }
+                runningLanguage = Languages.language(id: "csharp")
+                start(command, in: location)
+                runStatus.stringValue = "Creating \(template.name)…"
+                return
+            }
             do {
                 let folder = try ProjectTemplates.create(template, named: name, in: location)
                 if let command = template.runCommand { defaults.set(command, forKey: "runCommand:" + folder.path) }
