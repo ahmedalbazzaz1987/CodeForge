@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1
+
+- Properties window: changes always apply to the element it shows, even if the cursor moved in the meantime.
+- The design view no longer selects elements on keyboard presses (Return or Space), only on mouse clicks.
+
 ## 0.8.0
 
 The Toolbox, a web designer and the Properties window, arranged like Visual Studio.

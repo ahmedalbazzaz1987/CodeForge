@@ -32,6 +32,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private let explorerPane = NSSplitView()
     private var designHosts: [ObjectIdentifier: DesignHost] = [:]
     private var pendingPropertiesUpdate: DispatchWorkItem?
+    /// Where the element shown in the Properties window starts, so edits change that element even if the cursor moved.
+    private var propertiesTagLocation: (document: ObjectIdentifier, location: Int)?
     private let branchButton = NSButton()
     private let tabBar = TabBarView()
     private let editorHost = NSView()
@@ -538,16 +540,19 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard let current else { return properties.showNothing() }
         if ["html", "razor"].contains(current.language.id),
            let tag = HTMLTag.at(current.textView.selectedRange().location, in: current.textView.string) {
+            propertiesTagLocation = (ObjectIdentifier(current), tag.range.location)
             properties.show(tag: tag)
         } else {
+            propertiesTagLocation = nil
             properties.show(file: current)
         }
     }
 
     /// Rewrites the tag at the cursor after a change in the Properties window (one undoable edit).
     private func changeAttribute(_ index: Int, name: String?, value: String?) {
-        guard let current, let textView = Optional(current.textView),
-              var tag = HTMLTag.at(textView.selectedRange().location, in: textView.string) else { return }
+        guard let current, let shown = propertiesTagLocation, shown.document == ObjectIdentifier(current) else { return }
+        let textView = current.textView
+        guard var tag = HTMLTag.at(shown.location + 1, in: textView.string), tag.range.location == shown.location else { return NSSound.beep() }
         if index >= tag.attributes.count {
             guard let name else { return }
             tag.attributes.append((name, value ?? ""))
