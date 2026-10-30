@@ -8,6 +8,7 @@ private extension NSToolbarItem.Identifier {
     static let saveAll = Self("saveAll")
     static let start = Self("start")
     static let debug = Self("debug")
+    static let configuration = Self("configuration")
     static let stop = Self("stop")
     static let panel = Self("panel")
 }
@@ -32,6 +33,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private let explorerPane = NSSplitView()
     private var designHosts: [ObjectIdentifier: DesignHost] = [:]
     private var pendingPropertiesUpdate: DispatchWorkItem?
+    private let configurationMenu = NSPopUpButton()
+
+    /// Debug or Release, like Visual Studio's Solution Configurations box.
+    private var configuration: BuildConfiguration {
+        BuildConfiguration(rawValue: defaults.string(forKey: "configuration") ?? "") ?? .debug
+    }
     /// Where the element shown in the Properties window starts, so edits change that element even if the cursor moved.
     private var propertiesTagLocation: (document: ObjectIdentifier, location: Int)?
     private let branchButton = NSButton()
@@ -283,7 +290,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.newProject, .open, .saveAll, .flexibleSpace, .start, .debug, .stop, .flexibleSpace, .panel, .files]
+        [.newProject, .open, .saveAll, .flexibleSpace, .configuration, .start, .debug, .stop, .flexibleSpace, .panel, .files]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -291,6 +298,18 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        if id == .configuration {
+            configurationMenu.removeAllItems()
+            configurationMenu.addItems(withTitles: BuildConfiguration.allCases.map(\.rawValue))
+            configurationMenu.selectItem(withTitle: configuration.rawValue)
+            configurationMenu.target = self
+            configurationMenu.action = #selector(configurationChosen(_:))
+            configurationMenu.toolTip = "Solution Configuration"
+            let item = NSToolbarItem(itemIdentifier: id)
+            item.label = "Configuration"
+            item.view = configurationMenu
+            return item
+        }
         if id == .start {
             let item = NSToolbarItem(itemIdentifier: id)
             item.label = "Start"
@@ -934,7 +953,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     /// The detected project, when Start should run it instead of the current file.
     private var projectRunPlan: BuildPlan? {
-        guard let workspaceURL, let plan = BuildSystem.detect(in: workspaceURL), plan.run != nil else { return nil }
+        guard let workspaceURL, let detected = BuildSystem.detect(in: workspaceURL), detected.run != nil else { return nil }
+        let plan = BuildSystem.plan(detected, for: configuration)
         guard let current else { return plan }
         return plan.languages.contains(current.language.id) ? plan : nil
     }
@@ -1117,9 +1137,116 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if let workspaceURL, let key = buildKey("buildCommand"), let command = defaults.string(forKey: key) {
             return BuildPlan(name: "custom command", build: command, program: nil, folder: workspaceURL.path)
         }
-        if let workspaceURL, let plan = BuildSystem.detect(in: workspaceURL) { return plan }
+        if let workspaceURL, let plan = BuildSystem.detect(in: workspaceURL) { return BuildSystem.plan(plan, for: configuration) }
         guard let current, let file = current.url else { return nil }
         return BuildSystem.singleFile(file, languageId: current.language.id, outputDirectory: outputDirectory)
+    }
+
+    @objc private func configurationChosen(_ sender: NSPopUpButton) {
+        defaults.set(sender.titleOfSelectedItem, forKey: "configuration")
+        runStatus.stringValue = "Configuration: \(configuration.rawValue)"
+        updateRunChrome()
+    }
+
+    // MARK: Project, Test and Tools menus
+
+    /// Where new items go: the current file's folder inside the project, or the project folder.
+    private var itemFolder: URL? {
+        if let file = current?.url, let workspaceURL, file.path.hasPrefix(workspaceURL.path + "/") { return file.deletingLastPathComponent() }
+        return workspaceURL ?? current?.url?.deletingLastPathComponent()
+    }
+
+    @objc func addNewItem(_ sender: Any?) {
+        guard let folder = itemFolder, let window else {
+            return Prompt.show("Open a folder first", message: "New items are added to the open project folder.")
+        }
+        let namespace = ProjectTemplates.identifier(for: workspaceURL?.lastPathComponent ?? folder.lastPathComponent)
+        AddItemSheet(folder: folder, preferredExtension: current?.url?.pathExtension) { [weak self] template, name in
+            let url = folder.appendingPathComponent(name)
+            guard !FileManager.default.fileExists(atPath: url.path) else {
+                return Prompt.show("“\(name)” already exists", message: "Choose a different name.")
+            }
+            do {
+                try ItemTemplates.contents(of: template, fileName: name, namespace: namespace).write(to: url, atomically: true, encoding: .utf8)
+                self?.explorer.reload()
+                self?.open(url)
+            } catch {
+                Prompt.show("Couldn't create “\(name)”", message: error.localizedDescription)
+            }
+        }.show(in: window)
+    }
+
+    @objc func addExistingItem(_ sender: Any?) {
+        guard let folder = itemFolder else { return Prompt.show("Open a folder first", message: "Files are copied into the open project folder.") }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.message = "Choose files to copy into \(folder.lastPathComponent)."
+        panel.prompt = "Add"
+        guard panel.runModal() == .OK else { return }
+        for source in panel.urls {
+            let target = folder.appendingPathComponent(source.lastPathComponent)
+            do {
+                try FileManager.default.copyItem(at: source, to: target)
+            } catch {
+                Prompt.show("Couldn't add “\(source.lastPathComponent)”", message: error.localizedDescription)
+            }
+        }
+        explorer.reload()
+        if let first = panel.urls.first { open(folder.appendingPathComponent(first.lastPathComponent)) }
+    }
+
+    private var isDotNetProject: Bool { buildPlan()?.name.hasPrefix(".NET") ?? false }
+
+    @objc func manageNuGetPackages(_ sender: Any?) {
+        guard let folder = buildPlan().map({ URL(fileURLWithPath: $0.folder) }), isDotNetProject else {
+            return Prompt.show("NuGet packages are for .NET projects", message: "Open a folder with a .csproj, .vbproj or .sln file.")
+        }
+        guard let package = Prompt.ask("Add NuGet Package", message: "Enter a package name, optionally with a version, for example: Newtonsoft.Json or Dapper 2.1.35. "
+                                       + "The packages already in the project are listed in the Output.", confirm: "Install")?
+            .trimmingCharacters(in: .whitespaces), !package.isEmpty else {
+            start("dotnet list package", in: folder)
+            return
+        }
+        let parts = package.split(separator: " ").map(String.init)
+        var command = "dotnet add package " + CommandTemplate.shellQuote(parts[0])
+        if parts.count > 1 { command += " --version " + CommandTemplate.shellQuote(parts[1]) }
+        start(command + " && dotnet list package", in: folder)
+    }
+
+    @objc func openProjectFile(_ sender: Any?) {
+        guard let workspaceURL else { return }
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: workspaceURL.path)) ?? []).sorted()
+        let preferred = [".csproj", ".vbproj", ".fsproj", ".slnx", ".sln"]
+        let file = names.first { name in preferred.contains { name.hasSuffix($0) } }
+            ?? ["Package.swift", "Cargo.toml", "package.json", "go.mod", "CMakeLists.txt", "Makefile", "pyproject.toml"].first { names.contains($0) }
+        guard let file else { return Prompt.show("No project file", message: "This folder doesn't have a project file CodeForge recognizes.") }
+        open(workspaceURL.appendingPathComponent(file))
+    }
+
+    @objc func runAllTests(_ sender: Any?) {
+        guard let workspaceURL, let command = BuildSystem.testCommand(in: workspaceURL) else {
+            return Prompt.show("No tests found", message: "CodeForge runs tests for .NET (dotnet test), Swift packages, Cargo, Go, npm (a \"test\" script), Python (pytest or unittest) and Makefiles with a test target.")
+        }
+        saveAllDocuments(nil)
+        runningLanguage = nil
+        start(command, in: workspaceURL)
+        runStatus.stringValue = "Running tests…"
+    }
+
+    @objc func showOptions(_ sender: Any?) {
+        OptionsWindow.shared.onChange = { [weak self] in self?.optionsChanged() }
+        OptionsWindow.shared.show()
+    }
+
+    private func optionsChanged() {
+        setFontSize(CGFloat(defaults.double(forKey: "fontSize")))
+        documents.forEach(updateCodeLens)
+        let isRight = outerSplit.arrangedSubviews.last === explorerPane
+        if isRight != explorerOnRight {
+            arrangeExplorer()
+            outerSplit.layoutSubtreeIfNeeded()
+            placeDividers()
+        }
     }
 
     @objc func buildProject(_ sender: Any?) {
@@ -1424,6 +1551,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         case #selector(debugPause(_:)): debugSession?.state == .running
         case #selector(setDebugProgram(_:)), #selector(editBuildCommand(_:)), #selector(showGitChanges(_:)): workspaceURL != nil
         case #selector(showGitHistory(_:)): git.status != nil
+        case #selector(addNewItem(_:)), #selector(addExistingItem(_:)), #selector(openProjectFile(_:)), #selector(runAllTests(_:)): workspaceURL != nil
+        case #selector(manageNuGetPackages(_:)): isDotNetProject
         case #selector(deleteAllBreakpoints(_:)): !breakpoints.isEmpty
         case #selector(saveDocument(_:)), #selector(saveDocumentAs(_:)): current != nil
         case #selector(goToDefinition(_:)), #selector(findAllReferences(_:)), #selector(renameSymbol(_:)): current?.session != nil

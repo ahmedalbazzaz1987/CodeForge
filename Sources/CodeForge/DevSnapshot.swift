@@ -73,6 +73,13 @@ enum DevSnapshot {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             if let textView = find(controller.window!.contentView!, CodeTextView.self) { print("LENSES:", textView.lenses) }
+            // Any other visible window (a sheet, Options) is saved next to the main image.
+            for (index, extra) in NSApp.windows.enumerated() where extra !== controller.window && extra.isVisible {
+                guard let view = extra.contentView?.superview ?? extra.contentView,
+                      let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path + ".window\(index).png"))
+            }
             let view = controller.window!.contentView!.superview!
             let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
             view.cacheDisplay(in: view.bounds, to: rep)

@@ -26,7 +26,60 @@ public struct BuildPlan: Equatable, Sendable {
     }
 }
 
+/// Visual Studio's solution configurations.
+public enum BuildConfiguration: String, CaseIterable, Sendable {
+    case debug = "Debug"
+    case release = "Release"
+}
+
 public enum BuildSystem {
+    /// The plan with its build and run commands switched to a configuration (Debug is the default everywhere).
+    public static func plan(_ plan: BuildPlan, for configuration: BuildConfiguration) -> BuildPlan {
+        guard configuration == .release else { return plan }
+        func release(_ command: String?) -> String? {
+            guard let command else { return nil }
+            let rules: [(String, String)] = [
+                ("dotnet build", "dotnet build -c Release"), ("dotnet run", "dotnet run -c Release"),
+                ("swift build", "swift build -c release"), ("swift run", "swift run -c release"),
+                ("cargo build", "cargo build --release"), ("cargo run", "cargo run --release"),
+                ("cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug", "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release"),
+                ("xcodebuild -configuration Debug", "xcodebuild -configuration Release"),
+            ]
+            for (debug, optimized) in rules where command.hasPrefix(debug) {
+                return optimized + command.dropFirst(debug.count)
+            }
+            return command
+        }
+        return BuildPlan(name: plan.name, build: release(plan.build) ?? plan.build, clean: plan.clean,
+                         program: plan.program?.replacingOccurrences(of: "/.build/debug/", with: "/.build/release/")
+                            .replacingOccurrences(of: "/target/debug/", with: "/target/release/"),
+                         folder: plan.folder, run: release(plan.run), languages: plan.languages)
+    }
+
+    /// The command that runs a project's tests (Test ▸ Run All Tests), if the project type has one.
+    public static func testCommand(in folder: URL) -> String? {
+        let fm = FileManager.default
+        let names = Set((try? fm.contentsOfDirectory(atPath: folder.path)) ?? [])
+        if names.contains(where: { $0.hasSuffix(".sln") || $0.hasSuffix(".slnx") || $0.hasSuffix(".csproj") || $0.hasSuffix(".vbproj") || $0.hasSuffix(".fsproj") }) {
+            return "dotnet test"
+        }
+        if names.contains("Package.swift") { return "swift test" }
+        if names.contains("Cargo.toml") { return "cargo test" }
+        if names.contains("go.mod") { return "go test ./..." }
+        if names.contains("package.json"),
+           let manifest = try? String(contentsOf: folder.appendingPathComponent("package.json"), encoding: .utf8), manifest.contains("\"test\"") {
+            return "npm test"
+        }
+        let pythonTests = names.contains("tests") || names.contains("test") || names.contains("pytest.ini")
+            || names.contains(where: { $0.hasPrefix("test_") && $0.hasSuffix(".py") })
+        if pythonTests { return "python3 -m pytest 2>/dev/null || python3 -m unittest discover -v" }
+        if names.contains("Makefile"), let makefile = try? String(contentsOf: folder.appendingPathComponent("Makefile"), encoding: .utf8),
+           makefile.range(of: #"(?m)^test:"#, options: .regularExpression) != nil {
+            return "make test"
+        }
+        return nil
+    }
+
     /// Recognizes the project in a folder from the files at its top level.
     public static func detect(in folder: URL) -> BuildPlan? {
         let fm = FileManager.default

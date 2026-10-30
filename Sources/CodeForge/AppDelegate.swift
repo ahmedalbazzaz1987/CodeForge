@@ -7,7 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         signal(SIGPIPE, SIG_IGN)   // writing to a program that already exited must not crash the editor
         NSApp.mainMenu = MainMenu.build()
         windowController = WorkspaceWindowController()
-        windowController.restoreSession()
+        OptionsWindow.applyAppearance()
+        if UserDefaults.standard.object(forKey: "restoreSession") as? Bool ?? true { windowController.restoreSession() }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -77,6 +78,8 @@ enum MainMenu {
         main.addSubmenu("CodeForge") { menu in
             menu.add("About CodeForge", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
             menu.add("Check for Updates…", #selector(AppDelegate.checkForUpdates(_:)))
+            menu.addItem(.separator())
+            menu.add("Settings…", #selector(WorkspaceWindowController.showOptions(_:)), ",")
             menu.addItem(.separator())
             let services = NSMenu()
             menu.add("Services", nil).submenu = services
@@ -158,6 +161,21 @@ enum MainMenu {
             menu.add("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
         }
 
+        main.addSubmenu("Git") { menu in
+            menu.add("Git Changes", #selector(WorkspaceWindowController.showGitChanges(_:)), "g", [.command, .option])
+            menu.add("View History", #selector(WorkspaceWindowController.showGitHistory(_:)))
+            menu.addItem(.separator())
+            menu.add("Clone Repository…", #selector(WorkspaceWindowController.cloneRepository(_:)))
+        }
+
+        main.addSubmenu("Project") { menu in
+            menu.add("Add New Item…", #selector(WorkspaceWindowController.addNewItem(_:)), "a", [.command, .shift])
+            menu.add("Add Existing Item…", #selector(WorkspaceWindowController.addExistingItem(_:)), "a", [.command, .option, .shift])
+            menu.addItem(.separator())
+            menu.add("Manage NuGet Packages…", #selector(WorkspaceWindowController.manageNuGetPackages(_:)))
+            menu.add("Project Properties", #selector(WorkspaceWindowController.openProjectFile(_:)))
+        }
+
         main.addSubmenu("Build") { menu in
             menu.add("Build", #selector(WorkspaceWindowController.buildProject(_:)), "b", [.command, .shift])
             menu.add("Clean", #selector(WorkspaceWindowController.cleanProject(_:)), "k", [.command, .shift])
@@ -186,11 +204,15 @@ enum MainMenu {
             menu.add("Clear Console", #selector(WorkspaceWindowController.clearConsole(_:)), "k")
         }
 
-        main.addSubmenu("Git") { menu in
-            menu.add("Git Changes", #selector(WorkspaceWindowController.showGitChanges(_:)), "g", [.command, .option])
-            menu.add("View History", #selector(WorkspaceWindowController.showGitHistory(_:)))
+        main.addSubmenu("Test") { menu in
+            menu.add("Run All Tests", #selector(WorkspaceWindowController.runAllTests(_:)), "u")
+        }
+
+        main.addSubmenu("Tools") { menu in
+            menu.add("Terminal", #selector(WorkspaceWindowController.showTerminal(_:)))
+            menu.add("Manage NuGet Packages…", #selector(WorkspaceWindowController.manageNuGetPackages(_:)))
             menu.addItem(.separator())
-            menu.add("Clone Repository…", #selector(WorkspaceWindowController.cloneRepository(_:)))
+            menu.add("Options…", #selector(WorkspaceWindowController.showOptions(_:)))
         }
 
         main.addSubmenu("Window") { menu in

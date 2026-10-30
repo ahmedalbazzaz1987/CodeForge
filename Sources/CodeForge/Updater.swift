@@ -36,6 +36,7 @@ final class Updater {
 
     /// Checks at most once a day, and stays quiet unless an update exists.
     func checkInBackgroundIfDue() {
+        guard UserDefaults.standard.object(forKey: "autoCheckUpdates") as? Bool ?? true else { return }
         guard repository != nil, Date().timeIntervalSince1970 - UserDefaults.standard.double(forKey: lastCheckKey) > 86_400 else { return }
         check(userInitiated: false)
     }

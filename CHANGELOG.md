@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0
+
+Visual Studio-style menus and tools.
+
+- Menus in Visual Studio's order: File, Edit, View, Git, **Project**, Build, Debug, **Test**, **Tools**, Window, Help.
+- **Project ▸ Add New Item…** (⇧⌘A): C# and VB.NET classes, interfaces and modules, Razor pages and components, HTML, CSS, JavaScript, TypeScript, JSON, Swift, Python, C/C++ and text files. It starts on a template that matches the file you're editing. **Add Existing Item…** copies files into the project.
+- **Project ▸ Manage NuGet Packages…** adds a package (with an optional version) to a .NET project and lists its packages; **Project Properties** opens the project file.
+- **Debug / Release** configuration box in the toolbar, used by Build and Start (`dotnet -c Release`, `swift -c release`, `cargo --release`, CMake and Xcode builds).
+- **Test ▸ Run All Tests** (⌘U) runs `dotnet test`, `swift test`, `cargo test`, `go test`, `npm test`, pytest/unittest or `make test`.
+- **Tools ▸ Options…** (also CodeForge ▸ Settings, ⌘,): color theme (system, light, dark), Solution Explorer side, font size, CodeLens, automatic update checks and reopening the last session.
+
 ## 0.8.2
 
 - Design view: stray clicks that land on the page root (`<html>`) no longer replace the selected element in the Properties window.

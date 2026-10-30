@@ -16,6 +16,8 @@ Releases.
 - **Toolbox, designer and Properties.** A Visual Studio-style Toolbox with HTML controls, Bootstrap components, ASP.NET
   Tag Helpers and C#, VB.NET, SwiftUI, Python and JavaScript snippets (double-click or drag into the editor). HTML pages
   have Design / Split / Source views, and the Properties window edits the attributes of the selected element.
+- **Visual Studio menus and tools.** Project ▸ Add New Item, NuGet packages, a Debug/Release configuration box, Test ▸
+  Run All Tests and Tools ▸ Options.
 - **.NET.** VB.NET, C# and ASP.NET Core: New Project templates (Razor Pages, MVC, Web API, Blazor, console and class
   libraries), Build and Start with `dotnet`, MSBuild errors in the Error List, and C# IntelliSense.
 - **Many languages.** Syntax highlighting for Swift, Python, JavaScript, TypeScript, C, C++, Objective-C, Java, Kotlin,
@@ -60,7 +62,9 @@ open dist/CodeForge.app
 
 | Action | Shortcut |
 | --- | --- |
-| New project | ⇧⌘N |
+| New project / Add New Item | ⇧⌘N / ⇧⌘A |
+| Run All Tests | ⌘U |
+| Options | ⌘, |
 | Open a file or folder | ⌘O |
 | Quick Open (find a file by name) | ⌘P |
 | New file / Save / Save All | ⌘N / ⌘S / ⌥⌘S |
