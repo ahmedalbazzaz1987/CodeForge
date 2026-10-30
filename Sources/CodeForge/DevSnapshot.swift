@@ -69,7 +69,8 @@ enum DevSnapshot {
         }
         if let actions = env["CF_ACTIONS"] {
             for (index, action) in actions.split(separator: ",").enumerated() {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8 + Double(index) * 0.7) { _ = controller.perform(NSSelectorFromString(String(action)), with: nil) }
+                let gap = Double(env["CF_ACTION_GAP"] ?? "") ?? 0.7
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8 + Double(index) * gap) { _ = controller.perform(NSSelectorFromString(String(action)), with: nil) }
             }
         }
         if let text = env["CF_FIND"] {

@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.10.0
+
+Closer to Visual Studio Professional: refactoring, Find in Files, Class View, Object Browser, Server Explorer, code
+snippets, color themes, VB.NET IntelliSense, more .NET templates and .NET debugging.
+
+- **.NET debugging** (F5) for C#, VB.NET, F# and ASP.NET Core: breakpoints, stepping, Locals, Call Stack and Evaluate.
+  It uses netcoredbg, Samsung's open-source .NET debugger, which CodeForge offers to download the first time.
+- **VB.NET IntelliSense** without a language server: member lists after `.` for your own classes and common .NET classes
+  (`Console.`, `List(Of T).`, `String`, `DateTime`, `File`, LINQ…), keywords, locals, hover info, Go to Definition (F12),
+  Find All References (⇧F12) and Rename (F2). Other languages without a server get keyword, symbol and word completion.
+- **Find in Files / Replace in Files** (⇧⌘F / ⇧⌘H): the whole project, the current folder or the open documents; match
+  case, whole word, regular expressions and file types. Results go to a new **Find Results** tab with the matches
+  highlighted; Replace All in open files can be undone.
+- **Refactoring.** Edit ▸ Refactor ▸ **Quick Actions and Refactorings** (⌥↩) shows the language server's fixes and
+  refactorings; **Extract Method** (⌥⌘M) uses the server's when it has one, and CodeForge's own for VB.NET, C#, Python,
+  JavaScript, TypeScript and Swift (parameters and the return value are worked out for you).
+- **Class View** (⇧⌘C), a new tab next to Solution Explorer and Git: namespaces, classes, modules and their members, with
+  search. **Object Browser** (⌥⌘J): your project's types and about 45 common .NET classes with their members.
+- **Server Explorer** (⌃⌘S), a tab next to the Toolbox: connect to SQLite files, PostgreSQL, MySQL/MariaDB or SQL Server;
+  browse tables, views and columns; double-click a table to see its data. **Tools ▸ Execute Query** (⇧⌘E) runs a SQL tab
+  and shows the rows in a new **Query Results** tab.
+- **Code snippets**: type a shortcut (`prop`, `ctor`, `foreach`, `cw`, `Sub`, `For`, `Try`…) and press Tab. **Tools ▸ Code
+  Snippets Manager** (⌃⌘B) adds, changes and deletes snippets for each language; they also appear in IntelliSense and in a
+  Code Snippets group in the Toolbox.
+- **Color themes** in Tools ▸ Options: Light, Dark, Blue, High Contrast, Monokai, Dracula, Solarized Dark and Solarized Light.
+- **Customizable toolbar** (View ▸ Toolbars ▸ Customize…, or right-click the toolbar) with new buttons: Build, Run All
+  Tests, Find in Files, Quick Actions, Comment/Uncomment, Add New Item, Git Changes, Toolbox, Server Explorer, Class View
+  and Object Browser.
+- **New Project templates**: ASP.NET Core Empty, gRPC Service, Worker Service, Blazor WebAssembly, Razor Class Library,
+  .NET MAUI (runs on this Mac with Mac Catalyst), Avalonia desktop apps with XAML (like WPF, and they run on a Mac),
+  xUnit (C# and VB.NET), MSTest and NUnit test projects, and an F# console app.
+
 ## 0.9.0
 
 Visual Studio-style menus and tools.
