@@ -114,6 +114,10 @@ final class AddItemSheet: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     }
 }
 
+extension Notification.Name {
+    static let themeDidChange = Notification.Name("CodeForgeThemeDidChange")
+}
+
 /// Tools ▸ Options…: appearance, editor and environment settings.
 final class OptionsWindow: NSObject {
     static let shared = OptionsWindow()
@@ -139,7 +143,7 @@ final class OptionsWindow: NSObject {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 330), styleMask: [.titled, .closable], backing: .buffered, defer: true)
         window.title = "Options"
         window.isReleasedWhenClosed = false
-        appearance.addItems(withTitles: ["Use System Setting", "Light", "Dark"])
+        appearance.addItems(withTitles: ["Use System Setting (Light or Dark)"] + ColorThemes.all.map(\.name))
         explorerSide.addItems(withTitles: ["Right (like Visual Studio)", "Left"])
         fontSize.minValue = 9
         fontSize.maxValue = 32
@@ -179,7 +183,7 @@ final class OptionsWindow: NSObject {
     }
 
     private func load() {
-        appearance.selectItem(at: ["system", "light", "dark"].firstIndex(of: defaults.string(forKey: "appearance") ?? "system") ?? 0)
+        appearance.selectItem(at: Self.themeIDs.firstIndex(of: defaults.string(forKey: "appearance") ?? "system") ?? 0)
         explorerSide.selectItem(at: (defaults.object(forKey: "explorerOnRight") as? Bool ?? true) ? 0 : 1)
         let size = defaults.double(forKey: "fontSize") == 0 ? 13 : defaults.double(forKey: "fontSize")
         fontSize.doubleValue = size
@@ -190,7 +194,7 @@ final class OptionsWindow: NSObject {
     }
 
     @objc private func changed() {
-        defaults.set(["system", "light", "dark"][max(appearance.indexOfSelectedItem, 0)], forKey: "appearance")
+        defaults.set(Self.themeIDs[max(appearance.indexOfSelectedItem, 0)], forKey: "appearance")
         defaults.set(explorerSide.indexOfSelectedItem == 0, forKey: "explorerOnRight")
         defaults.set(fontSize.doubleValue, forKey: "fontSize")
         fontLabel.stringValue = "\(Int(fontSize.doubleValue)) pt"
@@ -201,11 +205,19 @@ final class OptionsWindow: NSObject {
         onChange?()
     }
 
+    private static let themeIDs = ["system"] + ColorThemes.all.map(\.id)
+
+    /// Applies the color theme: a theme fixes light or dark mode; "system" follows macOS.
     static func applyAppearance() {
-        switch UserDefaults.standard.string(forKey: "appearance") {
-        case "light": NSApp.appearance = NSAppearance(named: .aqua)
-        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-        default: NSApp.appearance = nil
+        let theme = ColorThemes.theme(id: UserDefaults.standard.string(forKey: "appearance"))
+        Theme.active = theme
+        NSApp.appearance = theme.map { NSAppearance(named: $0.isDark ? .darkAqua : .aqua) } ?? nil
+        // Two themes can share light or dark mode, so redraw everything rather than wait for an appearance change.
+        func redraw(_ view: NSView) {
+            view.needsDisplay = true
+            view.subviews.forEach(redraw)
         }
+        for window in NSApp.windows { window.contentView.map(redraw) }
+        NotificationCenter.default.post(name: .themeDidChange, object: nil)
     }
 }

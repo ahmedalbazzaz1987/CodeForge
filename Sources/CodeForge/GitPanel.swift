@@ -41,7 +41,8 @@ enum Git {
 final class SidebarView: NSView {
     let explorer: FileTreeView
     let git = GitChangesView()
-    private let switcher = NSSegmentedControl(labels: ["Explorer", "Git Changes"], trackingMode: .selectOne, target: nil, action: nil)
+    let classView = ClassView()
+    private let switcher = NSSegmentedControl(labels: ["Explorer", "Git", "Class View"], trackingMode: .selectOne, target: nil, action: nil)
     private let content = NSView()
 
     init(explorer: FileTreeView) {
@@ -75,7 +76,7 @@ final class SidebarView: NSView {
     func show(_ index: Int) {
         switcher.selectedSegment = index
         content.subviews.forEach { $0.removeFromSuperview() }
-        let view: NSView = index == 0 ? explorer : git
+        let view: NSView = [explorer, git, classView][min(max(index, 0), 2)]
         view.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(view)
         NSLayoutConstraint.activate([

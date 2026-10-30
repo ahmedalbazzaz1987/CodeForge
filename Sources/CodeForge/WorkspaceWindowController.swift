@@ -11,6 +11,17 @@ private extension NSToolbarItem.Identifier {
     static let configuration = Self("configuration")
     static let stop = Self("stop")
     static let panel = Self("panel")
+    static let build = Self("build")
+    static let runTests = Self("runTests")
+    static let findInFiles = Self("findInFiles")
+    static let comment = Self("comment")
+    static let gitChanges = Self("gitChanges")
+    static let toolbox = Self("toolbox")
+    static let classView = Self("classView")
+    static let serverExplorer = Self("serverExplorer")
+    static let addItem = Self("addItem")
+    static let quickActions = Self("quickActions")
+    static let objectBrowser = Self("objectBrowser")
 }
 
 /// The main window: editor tabs, explorer, bottom panel (Output, Error List, Terminal) and status bar.
@@ -28,6 +39,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private lazy var sidebar = SidebarView(explorer: explorer)
     private var git: GitChangesView { sidebar.git }
     private let toolbox = ToolboxView()
+    /// Toolbox and Server Explorer, on the left like Visual Studio.
+    private lazy var toolPane = ToolPane(toolbox: toolbox)
+    /// SQL query tabs and the connection each runs against.
+    private var queryConnections: [ObjectIdentifier: DataConnection] = [:]
+    private var queryCount = 0
     private let properties = PropertiesView()
     /// Solution Explorer / Git Changes above the Properties window, like Visual Studio's right-hand column.
     private let explorerPane = NSSplitView()
@@ -199,7 +215,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         ])
         window?.contentView = root
         explorerPane.isHidden = defaults.bool(forKey: "explorerHidden")
-        toolbox.isHidden = defaults.bool(forKey: "toolboxHidden")
+        toolPane.isHidden = defaults.bool(forKey: "toolboxHidden")
         properties.isHidden = defaults.bool(forKey: "propertiesHidden")
         panel.isHidden = defaults.bool(forKey: "consoleHidden")
     }
@@ -209,7 +225,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     /// [Toolbox | editor | Solution Explorer + Properties], like Visual Studio; mirrored when the explorer is on the left.
     private func arrangeExplorer() {
         outerSplit.arrangedSubviews.forEach { outerSplit.removeArrangedSubview($0); $0.removeFromSuperview() }
-        let views: [NSView] = explorerOnRight ? [toolbox, innerSplit, explorerPane] : [explorerPane, innerSplit, toolbox]
+        let views: [NSView] = explorerOnRight ? [toolPane, innerSplit, explorerPane] : [explorerPane, innerSplit, toolPane]
         views.forEach(outerSplit.addArrangedSubview)
         for (index, view) in views.enumerated() {
             outerSplit.setHoldingPriority(view === innerSplit ? .init(250) : .init(260), forSubviewAt: index)
@@ -244,7 +260,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         let explorerWidth = defaults.double(forKey: "explorerWidth").clamped(150, 500, default: 270)
         let toolboxWidth = defaults.double(forKey: "toolboxWidth").clamped(150, 400, default: 210)
         let propertiesHeight = defaults.double(forKey: "propertiesHeight").clamped(120, 700, default: 260)
-        place(toolbox, width: toolboxWidth)
+        place(toolPane, width: toolboxWidth)
         place(explorerPane, width: explorerWidth)
         if !panel.isHidden { innerSplit.setPosition(innerSplit.bounds.height - panelHeight, ofDividerAt: 0) }
         if !properties.isHidden { explorerPane.setPosition(explorerPane.bounds.height - propertiesHeight, ofDividerAt: 0) }
@@ -266,7 +282,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard didPlaceDividers else { return }
-        if !toolbox.isHidden { defaults.set(Double(toolbox.frame.width), forKey: "toolboxWidth") }
+        if !toolPane.isHidden { defaults.set(Double(toolPane.frame.width), forKey: "toolboxWidth") }
         if !properties.isHidden, !explorerPane.isHidden { defaults.set(Double(properties.frame.height), forKey: "propertiesHeight") }
         if !explorerPane.isHidden { defaults.set(Double(explorerPane.frame.width), forKey: "explorerWidth") }
         if !panel.isHidden { defaults.set(Double(panel.frame.height), forKey: "consoleHeight") }
@@ -276,6 +292,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         let toolbar = NSToolbar(identifier: "CodeForgeToolbar2")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
+        // View ▸ Toolbars ▸ Customize…: drag buttons in and out, like Visual Studio's Customize dialog.
+        toolbar.allowsUserCustomization = true
+        toolbar.autosavesConfiguration = true
         window?.toolbar = toolbar
         window?.toolbarStyle = .unified
 
@@ -294,7 +313,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar) + [.space]
+        // Each item once, then the extras; spaces can be added any number of times.
+        var seen = Set<NSToolbarItem.Identifier>()
+        return (toolbarDefaultItemIdentifiers(toolbar) + [.build, .runTests, .findInFiles, .quickActions, .comment, .addItem, .gitChanges,
+                                                          .toolbox, .serverExplorer, .classView, .objectBrowser, .space])
+            .filter { seen.insert($0).inserted }
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
@@ -324,6 +347,17 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             .stop: ("Stop", "stop.fill", #selector(stopRunning(_:))),
             .debug: ("Debug", "ladybug", #selector(startDebugging(_:))),
             .panel: ("Panel", "rectangle.bottomthird.inset.filled", #selector(toggleConsole(_:))),
+            .build: ("Build", "hammer", #selector(buildProject(_:))),
+            .runTests: ("Run All Tests", "checkmark.diamond", #selector(runAllTests(_:))),
+            .findInFiles: ("Find in Files", "doc.text.magnifyingglass", #selector(findInFiles(_:))),
+            .quickActions: ("Quick Actions", "lightbulb", #selector(showQuickActions(_:))),
+            .comment: ("Comment / Uncomment", "text.bubble", #selector(CodeTextView.toggleComment(_:))),
+            .addItem: ("Add New Item", "doc.badge.plus", #selector(addNewItem(_:))),
+            .gitChanges: ("Git Changes", "arrow.triangle.branch", #selector(showGitChanges(_:))),
+            .toolbox: ("Toolbox", "wrench.and.screwdriver", #selector(toggleToolbox(_:))),
+            .serverExplorer: ("Server Explorer", "cylinder.split.1x2", #selector(showServerExplorer(_:))),
+            .classView: ("Class View", "list.bullet.indent", #selector(showClassView(_:))),
+            .objectBrowser: ("Object Browser", "books.vertical", #selector(showObjectBrowser(_:))),
         ]
         guard let (label, symbol, action) = specs[id] else { return nil }
         let item = NSToolbarItem(itemIdentifier: id)
@@ -331,7 +365,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         item.toolTip = label
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
         item.isBordered = true
-        item.target = self
+        item.target = id == .comment ? nil : self
         item.action = action
         if id == .stop { item.image = item.image?.withSymbolConfiguration(.init(paletteColors: [.systemRed])) }
         return item
@@ -373,7 +407,57 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         panel.onHide = { [weak self] in self?.setConsoleVisible(false) }
         panel.references.onOpen = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
+        panel.findResults.onOpen = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
         intelliSense.document = { [weak self] textView in self?.documents.first { $0.textView === textView } }
+        intelliSense.documents = { [weak self] in self?.documents ?? [] }
+        intelliSense.projectFolder = { [weak self] in self?.workspaceURL }
+        intelliSense.diagnostics = { [weak self] url in self?.liveDiagnostics[url.standardizedFileURL] ?? [] }
+        LanguageServerManager.shared.onApplyEdit = { [weak self] edits in self?.intelliSense.apply(edits, summary: "Changed") }
+        ProjectIndex.shared.onChange = { [weak self] in
+            self?.sidebar.classView.reload()
+            ObjectBrowserWindow.shared.reload()
+        }
+        sidebar.classView.onOpen = { [weak self] url, line in self?.open(url, line: line) }
+        ObjectBrowserWindow.shared.onOpen = { [weak self] url, line in
+            self?.open(url, line: line)
+            self?.window?.makeKeyAndOrderFront(nil)
+        }
+        SnippetStore.onChange = { [weak self] in self?.toolbox.show(language: self?.current?.language, force: true) }
+        toolPane.servers.onShowData = { [weak self] connection, table in
+            self?.runQuery(DatabaseClient.topRowsQuery(connection.kind, table: table), on: connection, title: table)
+        }
+        toolPane.servers.onNewQuery = { [weak self] connection in self?.newQuery(on: connection) }
+        let find = FindInFilesWindow.shared
+        find.context = { [weak self] in
+            guard let self else { return (nil, nil, []) }
+            let open = documents.compactMap { document in document.url.map { ($0, document.textView.string) } }
+            return (workspaceURL, current?.url?.deletingLastPathComponent(), open)
+        }
+        find.onResults = { [weak self] summary, matches in
+            guard let self else { return }
+            panel.findResults.set(summary: summary, matches: matches)
+            showPanelTab(.findResults)
+            panel.updateTabTitles()
+        }
+        find.onStatus = { [weak self] in self?.runStatus.stringValue = $0 }
+        find.onReplaceInOpenDocuments = { [weak self] expression, replacement, isRegex, urls in
+            var handled = Set<URL>()
+            var count = 0
+            for document in self?.documents ?? [] {
+                guard let url = document.url?.standardizedFileURL, urls.contains(url) else { continue }
+                let textView = document.textView
+                let result = FileSearch.replace(in: textView.string, expression: expression, with: replacement, regularExpression: isRegex)
+                guard result.count > 0 else { continue }
+                let all = NSRange(location: 0, length: (textView.string as NSString).length)
+                if textView.shouldChangeText(in: all, replacementString: result.text) {
+                    textView.textStorage?.replaceCharacters(in: all, with: result.text)
+                    textView.didChangeText()
+                    handled.insert(url)
+                    count += result.count
+                }
+            }
+            return (handled, count)
+        }
         intelliSense.onOpenLocation = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
         intelliSense.onStatus = { [weak self] in self?.runStatus.stringValue = $0 }
         intelliSense.onReferences = { [weak self] word, locations in
@@ -446,6 +530,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         documents.forEach(attachLanguageServer)
         panel.terminal.directory = url ?? FileManager.default.homeDirectoryForCurrentUser
         git.folder = url
+        ProjectIndex.shared.setFolder(url)
         if let url {
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
             if explorerPane.isHidden { toggleExplorer(nil) }
@@ -454,9 +539,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         saveSession()
     }
 
-    private func makeDocument(url: URL?, text: String) -> EditorDocument {
-        var name = "Untitled"
-        if url == nil {
+    private func makeDocument(url: URL?, text: String, name customName: String? = nil) -> EditorDocument {
+        var name = customName ?? "Untitled"
+        if url == nil, customName == nil {
             untitledCount += 1
             if untitledCount > 1 { name += " \(untitledCount)" }
         }
@@ -589,10 +674,16 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     @objc func toggleToolbox(_ sender: Any?) {
-        toolbox.isHidden.toggle()
-        defaults.set(toolbox.isHidden, forKey: "toolboxHidden")
+        setToolPaneVisible(toolPane.isHidden)
+        if !toolPane.isHidden { toolPane.show(0) }
+    }
+
+    private func setToolPaneVisible(_ visible: Bool) {
+        guard toolPane.isHidden == visible else { return }
+        toolPane.isHidden = !visible
+        defaults.set(toolPane.isHidden, forKey: "toolboxHidden")
         outerSplit.adjustSubviews()
-        place(toolbox, width: defaults.double(forKey: "toolboxWidth").clamped(150, 400, default: 210))
+        place(toolPane, width: defaults.double(forKey: "toolboxWidth").clamped(150, 400, default: 230))
     }
 
     @objc func toggleProperties(_ sender: Any?) {
@@ -684,6 +775,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard document.url != nil else { return saveAs(document) }
         do {
             try document.write()
+            if let url = document.url { ProjectIndex.shared.update(url, text: document.textView.string) }
             git.refresh()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self, weak document] in
                 if let document { self?.updateCodeLens(document) }
@@ -739,7 +831,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         startButton.toolTip = project.map { "Start \($0.name): \($0.run ?? "") (⌘R)" } ?? "Start (⌘R)"
         startButton.isEnabled = !isRunning && (custom != nil || current != nil)
         let debugging = debugSession != nil
-        statusBar.color = isRunning || debugging ? Theme.statusBusy : (workspaceURL == nil ? Theme.statusIdle : Theme.accent)
+        statusBar.color = isRunning || debugging ? Theme.statusBusy : (workspaceURL == nil ? Theme.statusIdle : Theme.statusAccent)
         startButton.isEnabled = startButton.isEnabled && !debugging
         window?.toolbar?.validateVisibleItems()
     }
@@ -747,7 +839,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     /// "IntelliSense: SourceKit-LSP", or an offer to install the server for this language.
     private func updateIntelliSenseStatus() {
         guard let current, let spec = LanguageServerSpecs.spec(forLanguage: current.language.id) else {
-            intelliButton.isHidden = true
+            // VB.NET and other languages without a server get CodeForge's own IntelliSense.
+            let basic = current.map { SymbolParser.supports(languageId: $0.language.id) } ?? false
+            intelliButton.isHidden = !basic
+            intelliButton.title = "IntelliSense: CodeForge"
+            intelliButton.toolTip = "Completions (⌃Space) from your project and common .NET classes, hover info, Go to Definition (F12), Find All References (⇧F12), Rename (F2) and Extract Method (⌥⌘M)"
             return
         }
         intelliButton.isHidden = false
@@ -767,7 +863,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     @objc private func intelliButtonClicked(_ sender: Any?) {
-        guard let current, let spec = LanguageServerSpecs.spec(forLanguage: current.language.id), current.session == nil else { return }
+        guard let current, LanguageServerSpecs.spec(forLanguage: current.language.id) != nil else { return }
+        guard let spec = LanguageServerSpecs.spec(forLanguage: current.language.id), current.session == nil else { return }
         guard let command = LanguageServerManager.shared.installCommand(for: spec) else {
             return Prompt.show("\(spec.name) isn't installed", message: spec.installHint, style: .informational)
         }
@@ -789,7 +886,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     @objc func renameSymbol(_ sender: Any?) {
-        if let current { intelliSense.rename(in: current.textView, documents: documents) }
+        if let current { intelliSense.rename(in: current.textView) }
     }
 
     private func updateCursorStatus() {
@@ -1289,9 +1386,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if let debugSession, debugSession.state == .paused { return debugSession.resume() }
         guard debugSession == nil, !isRunning else { return }
         if current?.language.id == "python" { return startPythonDebugging() }
+        if isDotNetProject, projectRunPlan != nil || ["csharp", "vb", "fsharp", "razor"].contains(current?.language.id ?? "") {
+            return startDotNetDebugging()
+        }
         if let language = current?.language.id, ["javascript", "typescript", "ruby", "php", "shell"].contains(language), buildPlan()?.program == nil {
             return Prompt.show("Debugging isn't available for \(current!.language.name) yet",
-                               message: "CodeForge debugs Python, and compiled programs (C, C++, Objective-C, Swift, Rust and Go) with LLDB. Use Start (⌘R) to run this file.")
+                               message: "CodeForge debugs Python, .NET (C#, VB.NET, F#) and compiled programs (C, C++, Objective-C, Swift, Rust and Go). Use Start (⌘R) to run this file.")
         }
         build { [weak self] in self?.launchDebugger() }
     }
@@ -1319,6 +1419,40 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         runStatus.stringValue = "Installing debugpy…"
     }
 
+    /// C#, VB.NET and F# projects: build (Debug), then run the program under netcoredbg, installed the first time with the user's OK.
+    private func startDotNetDebugging() {
+        guard let workspaceURL, let project = BuildSystem.dotnetProject(in: workspaceURL) else {
+            return Prompt.show("No .NET project", message: "Open the folder that has the .csproj, .vbproj or .fsproj file.")
+        }
+        let launch = { [weak self] in
+            guard let self else { return }
+            guard let assembly = BuildSystem.dotnetAssembly(project: project) else {
+                return Prompt.show("The program wasn't found", message: "The build didn't produce \(project.deletingPathExtension().lastPathComponent).dll in bin/Debug.")
+            }
+            guard let configuration = DebugConfiguration.dotnet(assembly: assembly, project: project) else {
+                return Prompt.show("Couldn't start the .NET debugger", message: "CodeForge needs the .NET SDK (brew install dotnet) and netcoredbg.")
+            }
+            openedBrowserForRun = false
+            startSession(configuration, title: assembly.lastPathComponent)
+        }
+        // Always debug a Debug build, whatever the toolbar says: Release builds can't stop on most lines.
+        let build = { [weak self] in
+            guard let self else { return }
+            saveAllDocuments(nil)
+            afterBuild = launch
+            runningLanguage = current?.language
+            start("dotnet build -c Debug " + CommandTemplate.shellQuote(project.path), in: project.deletingLastPathComponent())
+            runStatus.stringValue = "Building for debugging…"
+        }
+        if DotNetDebugging.isInstalled { return build() }
+        guard Prompt.confirm("Install the .NET debugger?",
+                             message: "CodeForge debugs C#, VB.NET and F# with netcoredbg, Samsung's open-source .NET debugger (MIT license). It downloads it from GitHub (about 15 MB) into its own folder. This happens once.",
+                             button: "Install") else { return }
+        afterBuild = build
+        start(DotNetDebugging.installCommand, in: FileManager.default.homeDirectoryForCurrentUser)
+        runStatus.stringValue = "Installing netcoredbg…"
+    }
+
     private func launchDebugger() {
         let customProgram = buildKey("debugProgram").flatMap { defaults.string(forKey: $0) }
         guard let path = customProgram ?? buildPlan()?.program, FileManager.default.isExecutableFile(atPath: path) else {
@@ -1336,7 +1470,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         session.breakpoints = { [weak self] in
             Dictionary(uniqueKeysWithValues: (self?.breakpoints ?? [:]).map { (URL(fileURLWithPath: $0.key), $0.value) })
         }
-        session.onOutput = { [weak self] text, kind in self?.console.append(text, kind) }
+        session.onOutput = { [weak self] text, kind in
+            self?.console.append(text, kind)
+            self?.openBrowserIfServerStarted(text)    // ASP.NET under the debugger
+        }
         session.onStopped = { [weak self] in self?.debuggerStopped() }
         session.onStateChange = { [weak self] in self?.debugStateChanged() }
         console.append("\nDebugging \(title)\n", .info)
@@ -1443,6 +1580,107 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         defaults.set(breakpoints.mapValues { Array($0) }, forKey: "breakpoints")
     }
 
+    // MARK: Find, refactoring and tool windows
+
+    private var selectedText: String? {
+        guard let current else { return nil }
+        let range = current.textView.selectedRange()
+        return range.length > 0 ? (current.textView.string as NSString).substring(with: range) : nil
+    }
+
+    @objc func findInFiles(_ sender: Any?) { FindInFilesWindow.shared.show(replacing: false, initialText: selectedText) }
+    @objc func replaceInFiles(_ sender: Any?) { FindInFilesWindow.shared.show(replacing: true, initialText: selectedText) }
+    @objc func showFindResults(_ sender: Any?) { showPanelTab(.findResults) }
+
+    @objc func showQuickActions(_ sender: Any?) {
+        if let current { intelliSense.showQuickActions(in: current.textView) }
+    }
+
+    @objc func extractMethod(_ sender: Any?) {
+        if let current { intelliSense.extractMethod(in: current.textView) }
+    }
+
+    @objc func showClassView(_ sender: Any?) {
+        if explorerPane.isHidden { toggleExplorer(nil) }
+        sidebar.show(2)
+        if ProjectIndex.shared.symbols.isEmpty { ProjectIndex.shared.rebuild() }
+    }
+
+    @objc func showObjectBrowser(_ sender: Any?) { ObjectBrowserWindow.shared.show() }
+
+    @objc func showServerExplorer(_ sender: Any?) {
+        setToolPaneVisible(true)
+        toolPane.show(1)
+    }
+
+    @objc func showSnippetsManager(_ sender: Any?) { SnippetsManagerWindow.shared.show(languageId: current?.language.id) }
+
+    @objc func showQueryResults(_ sender: Any?) { showPanelTab(.queryResults) }
+
+    /// A new SQL tab for a Server Explorer connection; Execute Query (⇧⌘E) runs it there.
+    private func newQuery(on connection: DataConnection) {
+        queryCount += 1
+        let document = makeDocument(url: nil, text: "-- \(connection.name) (\(connection.kind.title))\n-- Run with Tools ▸ Execute Query (⇧⌘E). Select part of the text to run only that.\n\n", name: "SQLQuery\(queryCount).sql")
+        document.language = Languages.language(id: "sql") ?? Languages.plainText
+        queryConnections[ObjectIdentifier(document)] = connection
+        documents.append(document)
+        select(documents.count - 1)
+        current?.textView.setSelectedRange(NSRange(location: (current?.textView.string as NSString?)?.length ?? 0, length: 0))
+    }
+
+    @objc func executeQuery(_ sender: Any?) {
+        guard let current, current.language.id == "sql" else { return }
+        let range = current.textView.selectedRange()
+        let sql = range.length > 0 ? (current.textView.string as NSString).substring(with: range) : current.textView.string
+        guard !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return NSSound.beep() }
+        var connection = queryConnections[ObjectIdentifier(current)] ?? toolPane.servers.selectedConnection
+        if connection == nil {
+            let all = toolPane.servers.connections
+            guard !all.isEmpty else {
+                Prompt.show("No data connection", message: "Add one in Server Explorer (View ▸ Server Explorer, then +), then run the query again.", style: .informational)
+                return showServerExplorer(nil)
+            }
+            let alert = NSAlert()
+            alert.messageText = "Run the query on which connection?"
+            let menu = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 280, height: 26))
+            menu.addItems(withTitles: all.map(\.name))
+            alert.accessoryView = menu
+            alert.addButton(withTitle: "Execute")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            connection = all[max(menu.indexOfSelectedItem, 0)]
+            queryConnections[ObjectIdentifier(current)] = connection
+        }
+        guard let connection, toolPane.servers.prepare(connection) else { return }
+        runQuery(sql, on: connection, title: connection.name)
+    }
+
+    private func runQuery(_ sql: String, on connection: DataConnection, title: String) {
+        guard toolPane.servers.prepare(connection) else { return }
+        runStatus.stringValue = "Executing query on \(connection.name)…"
+        let started = Date()
+        DatabaseService.run(sql, on: connection) { [weak self] result in
+            guard let self else { return }
+            let time = String(format: "%.2fs", Date().timeIntervalSince(started))
+            switch result {
+            case .success(let rows):
+                panel.queryResults.show(rows, title: title)
+                runStatus.stringValue = "Query completed in \(time)"
+            case .failure(let error):
+                panel.queryResults.showError(error.localizedDescription, title: title)
+                runStatus.stringValue = "Query failed"
+            }
+            showPanelTab(.queryResults)
+        }
+    }
+
+    @objc func customizeToolbar(_ sender: Any?) { window?.runToolbarCustomizationPalette(sender) }
+
+    @objc func connectToDatabase(_ sender: Any?) {
+        showServerExplorer(nil)
+        toolPane.servers.addConnection()
+    }
+
     // MARK: Git and CodeLens
 
     @objc func showGitChanges(_ sender: Any?) {
@@ -1526,6 +1764,13 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     #if DEBUG
+    func debugShowTable(_ table: String) {
+        guard let connection = toolPane.servers.connections.first else { return print("TABLE: no connection") }
+        showServerExplorer(nil)
+        toolPane.servers.expand(connection)
+        runQuery(DatabaseClient.topRowsQuery(connection.kind, table: table), on: connection, title: table)
+    }
+
     func documentForProbe(_ textView: CodeTextView) -> EditorDocument? { documents.first { $0.textView === textView } }
     func diagnosticsForProbe() -> [String] { liveDiagnostics.values.flatMap { $0 }.map { "\($0.line):\($0.column ?? 0) \($0.message)" } }
     #endif
@@ -1555,7 +1800,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         case #selector(manageNuGetPackages(_:)): isDotNetProject
         case #selector(deleteAllBreakpoints(_:)): !breakpoints.isEmpty
         case #selector(saveDocument(_:)), #selector(saveDocumentAs(_:)): current != nil
-        case #selector(goToDefinition(_:)), #selector(findAllReferences(_:)), #selector(renameSymbol(_:)): current?.session != nil
+        case #selector(goToDefinition(_:)), #selector(findAllReferences(_:)), #selector(renameSymbol(_:)), #selector(showQuickActions(_:)): current?.textView.isEditable == true
+        case #selector(extractMethod(_:)): current?.textView.isEditable == true && (current?.textView.selectedRange().length ?? 0) > 0
+        case #selector(executeQuery(_:)): current?.language.id == "sql"
         case #selector(saveAllDocuments(_:)): documents.contains { $0.isDirty }
         case #selector(closeFolder(_:)), #selector(editRunCommand(_:)): workspaceURL != nil
         case #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)): documents.count > 1
@@ -1568,7 +1815,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if menuItem.action == #selector(toggleConsole(_:)) { menuItem.title = panel.isHidden ? "Show Panel" : "Hide Panel" }
         if menuItem.action == #selector(startDebugging(_:)) { menuItem.title = debugSession?.state == .paused ? "Continue" : "Start Debugging" }
         if menuItem.action == #selector(toggleCodeLens(_:)) { menuItem.state = showsCodeLens ? .on : .off }
-        if menuItem.action == #selector(toggleToolbox(_:)) { menuItem.title = toolbox.isHidden ? "Show Toolbox" : "Hide Toolbox" }
+        if menuItem.action == #selector(toggleToolbox(_:)) { menuItem.title = toolPane.isHidden || toolPane.showsServers ? "Show Toolbox" : "Hide Toolbox" }
         if menuItem.action == #selector(toggleProperties(_:)) { menuItem.title = properties.isHidden ? "Show Properties Window" : "Hide Properties Window" }
         if menuItem.action == #selector(toggleExplorerSide(_:)) { menuItem.title = explorerOnRight ? "Move Explorer to Left" : "Move Explorer to Right" }
         return isEnabled(menuItem.action)
@@ -1592,7 +1839,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
 /// The colored bar at the bottom of the window.
 final class StatusBar: NSView {
-    var color: NSColor = Theme.accent { didSet { needsDisplay = true } }
+    var color: NSColor = Theme.statusAccent { didSet { needsDisplay = true } }
 
     override func draw(_ dirtyRect: NSRect) {
         color.setFill()

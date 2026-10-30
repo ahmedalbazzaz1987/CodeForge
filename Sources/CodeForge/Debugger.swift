@@ -96,6 +96,27 @@ struct DebugConfiguration {
                                   needsDeveloperAccess: true)
     }
 
+    /// A built .NET program (its .dll) under netcoredbg. ASP.NET apps get their launch profile's address.
+    static func dotnet(assembly: URL, project: URL) -> DebugConfiguration? {
+        guard DotNetDebugging.isInstalled, let dotnet = DotNetDebugging.dotnet else { return nil }
+        let folder = project.deletingLastPathComponent()
+        var env: [String: String] = ["DOTNET_ENVIRONMENT": "Development", "ASPNETCORE_ENVIRONMENT": "Development"]
+        if let settings = try? Data(contentsOf: folder.appendingPathComponent("Properties/launchSettings.json")),
+           let json = try? JSONSerialization.jsonObject(with: settings) as? [String: Any],
+           let profiles = json["profiles"] as? [String: Any],
+           let urls = profiles.values.compactMap({ ($0 as? [String: Any])?["applicationUrl"] as? String }).first {
+            // Plain HTTP only: the HTTPS development certificate may not be trusted on this Mac.
+            env["ASPNETCORE_URLS"] = urls.split(separator: ";").first { $0.hasPrefix("http://") }.map(String.init) ?? urls
+        }
+        var environment = LanguageServerManager.environment
+        environment["DOTNET_ROOT"] = environment["DOTNET_ROOT"] ?? dotnet.deletingLastPathComponent().path
+        return DebugConfiguration(adapter: DotNetDebugging.executable, adapterArguments: ["--interpreter=vscode"], environment: environment,
+                                  adapterID: "coreclr",
+                                  launch: ["type": "coreclr", "request": "launch", "program": dotnet.path, "args": [assembly.path],
+                                           "cwd": folder.path, "env": env, "stopAtEntry": false, "justMyCode": true,
+                                           "console": "internalConsole"])
+    }
+
     /// Python scripts with debugpy, installed into CodeForge's own folder.
     static func python(file: URL, folder: URL) -> DebugConfiguration? {
         guard let python = PythonDebugging.python, PythonDebugging.isInstalled else { return nil }
@@ -105,6 +126,37 @@ struct DebugConfiguration {
                                   launch: ["type": "python", "request": "launch", "program": file.path, "cwd": folder.path,
                                            "python": python.path, "console": "internalConsole", "justMyCode": true,
                                            "redirectOutput": true, "stopOnEntry": false, "env": ["PYTHONUNBUFFERED": "1"]])
+    }
+}
+
+/// .NET debugging (C#, VB.NET, F#) with Samsung's open-source netcoredbg, installed into CodeForge's own folder.
+/// Microsoft's own .NET debugger is licensed only for Microsoft's products, so CodeForge can't use it.
+enum DotNetDebugging {
+    static let installDirectory = LanguageServerManager.installDirectory.deletingLastPathComponent().appendingPathComponent("netcoredbg")
+    static var executable: URL { installDirectory.appendingPathComponent("netcoredbg/netcoredbg") }
+    static var isInstalled: Bool { FileManager.default.isExecutableFile(atPath: executable.path) }
+
+    /// Apple silicon uses the latest release; the last one with an Intel build is 3.1.3.
+    static var downloadURL: String {
+        #if arch(arm64)
+        "https://github.com/Samsung/netcoredbg/releases/latest/download/netcoredbg-osx-arm64.zip"
+        #else
+        "https://github.com/Samsung/netcoredbg/releases/download/3.1.3-1062/netcoredbg-osx-amd64.tar.gz"
+        #endif
+    }
+
+    /// Downloads and unpacks netcoredbg, then signs it locally so macOS will run it.
+    static var installCommand: String {
+        let folder = CommandTemplate.shellQuote(installDirectory.path)
+        let archive = downloadURL.hasSuffix(".zip") ? "netcoredbg.zip" : "netcoredbg.tar.gz"
+        let unpack = archive.hasSuffix(".zip") ? "unzip -q -o \(archive)" : "tar -xzf \(archive)"
+        return "mkdir -p \(folder) && cd \(folder) && rm -rf netcoredbg && curl -fL --progress-bar -o \(archive) \(downloadURL) && \(unpack) && rm -f \(archive)"
+            + " && codesign --force --sign - netcoredbg/netcoredbg netcoredbg/*.dylib >/dev/null 2>&1; test -x netcoredbg/netcoredbg && echo 'netcoredbg is installed.'"
+    }
+
+    static var dotnet: URL? {
+        ["/opt/homebrew/bin/dotnet", "/usr/local/share/dotnet/dotnet", "/usr/local/bin/dotnet", NSHomeDirectory() + "/.dotnet/dotnet"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }.map { URL(fileURLWithPath: $0) }
     }
 }
 

@@ -193,6 +193,7 @@ final class CodeTextView: NSTextView {
     }
 
     override func insertTab(_ sender: Any?) {
+        if assistant?.textViewExpandSnippet(self) == true { return }
         let selection = selectedRange()
         if (string as NSString).substring(with: selection).contains("\n") {
             indentSelection(sender)

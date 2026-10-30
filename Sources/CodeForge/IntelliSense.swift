@@ -18,6 +18,8 @@ final class LanguageSession {
         let sortText: String
         /// The range the server wants replaced (UTF-16 offsets), if it gave one.
         let replaceStart: Int?
+        /// A code snippet's body: accepting the item expands it.
+        var snippet: String? = nil
     }
 
     let server: LanguageServer
@@ -198,24 +200,79 @@ final class LanguageSession {
     func rename(at offset: Int, to newName: String, handler: @escaping ([URL: [(range: [String: Any], text: String)]]) -> Void) {
         var parameters = params(at: offset)
         parameters["newName"] = newName
-        server.request("textDocument/rename", parameters) { result in
-            var edits: [URL: [(range: [String: Any], text: String)]] = [:]
-            let workspaceEdit = result as? [String: Any]
-            func add(_ uri: String, _ list: [[String: Any]]) {
-                guard let url = URL(string: uri) else { return }
-                for edit in list {
-                    if let range = edit["range"] as? [String: Any], let text = edit["newText"] as? String {
-                        edits[url, default: []].append((range, text))
-                    }
+        server.request("textDocument/rename", parameters) { handler(Self.workspaceEdits($0)) }
+    }
+
+    typealias Edits = [URL: [(range: [String: Any], text: String)]]
+
+    /// The text edits in an LSP WorkspaceEdit, per file.
+    static func workspaceEdits(_ result: Any?) -> Edits {
+        var edits: Edits = [:]
+        let workspaceEdit = result as? [String: Any]
+        func add(_ uri: String, _ list: [[String: Any]]) {
+            guard let url = URL(string: uri) else { return }
+            for edit in list {
+                if let range = edit["range"] as? [String: Any], let text = edit["newText"] as? String {
+                    edits[url, default: []].append((range, text))
                 }
             }
-            for (uri, list) in workspaceEdit?["changes"] as? [String: [[String: Any]]] ?? [:] { add(uri, list) }
-            for change in workspaceEdit?["documentChanges"] as? [[String: Any]] ?? [] {
-                if let uri = (change["textDocument"] as? [String: Any])?["uri"] as? String, let list = change["edits"] as? [[String: Any]] {
-                    add(uri, list)
-                }
+        }
+        for (uri, list) in workspaceEdit?["changes"] as? [String: [[String: Any]]] ?? [:] { add(uri, list) }
+        for change in workspaceEdit?["documentChanges"] as? [[String: Any]] ?? [] {
+            if let uri = (change["textDocument"] as? [String: Any])?["uri"] as? String, let list = change["edits"] as? [[String: Any]] {
+                add(uri, list)
             }
-            handler(edits)
+        }
+        return edits
+    }
+
+    struct CodeAction {
+        let title: String
+        let kind: String
+        let isPreferred: Bool
+        let raw: [String: Any]
+    }
+
+    /// Quick fixes and refactorings the server offers for a range (with the problems reported there).
+    func codeActions(range: NSRange, diagnostics: [Diagnostic], handler: @escaping ([CodeAction]) -> Void) {
+        flush()
+        let lines = TextLines(document?.textView.string ?? "")
+        let start = lines.position(of: range.location), end = lines.position(of: NSMaxRange(range))
+        func position(_ p: (line: Int, character: Int)) -> [String: Any] { ["line": p.line, "character": p.character] }
+        let problems: [[String: Any]] = diagnostics.compactMap { diagnostic in
+            guard let column = diagnostic.column else { return nil }
+            let endLine = (diagnostic.endLine ?? diagnostic.line) - 1, endColumn = (diagnostic.endColumn ?? column) - 1
+            guard diagnostic.line - 1 <= end.line, endLine >= start.line else { return nil }
+            return ["range": ["start": ["line": diagnostic.line - 1, "character": column - 1], "end": ["line": endLine, "character": endColumn]],
+                    "message": diagnostic.message, "severity": diagnostic.severity == .error ? 1 : 2]
+        }
+        server.request("textDocument/codeAction", [
+            "textDocument": ["uri": uri],
+            "range": ["start": position(start), "end": position(end)],
+            "context": ["diagnostics": problems, "triggerKind": 1],
+        ]) { result in
+            let items = (result as? [[String: Any]] ?? []).compactMap { item -> CodeAction? in
+                guard let title = item["title"] as? String, item["disabled"] == nil else { return nil }
+                return CodeAction(title: title, kind: item["kind"] as? String ?? "", isPreferred: item["isPreferred"] as? Bool ?? false, raw: item)
+            }
+            handler(items)
+        }
+    }
+
+    /// Runs a code action: applies its edit (resolving it first if the server left it out), then its command.
+    func perform(_ action: CodeAction, apply: @escaping (Edits) -> Void) {
+        let run: ([String: Any]) -> Void = { [weak self] item in
+            if let edit = item["edit"] { apply(Self.workspaceEdits(edit)) }
+            // A bare Command has "command" as a string; a CodeAction nests it.
+            let command = item["command"] as? [String: Any] ?? (item["command"] is String ? item : nil)
+            if let command, let name = command["command"] as? String {
+                self?.server.request("workspace/executeCommand", ["command": name, "arguments": command["arguments"] ?? []]) { _ in }
+            }
+        }
+        if action.raw["edit"] == nil, action.raw["command"] == nil, server.resolvesCodeActions {
+            server.request("codeAction/resolve", action.raw) { result in run(result as? [String: Any] ?? action.raw) }
+        } else {
+            run(action.raw)
         }
     }
 
@@ -250,11 +307,17 @@ protocol CodeTextViewAssistant: AnyObject {
     func textView(_ textView: CodeTextView, hoverAt index: Int)
     func textViewEndedHover(_ textView: CodeTextView)
     func textView(_ textView: CodeTextView, goToDefinitionAt index: Int)
+    /// Tab after a snippet shortcut (`prop`, `For`, `cw`…) expands it. Returns true if it did.
+    func textViewExpandSnippet(_ textView: CodeTextView) -> Bool
 }
 
-/// Completion list, hover info, definitions, references and rename for one window.
+/// Completion list, hover info, definitions, references, rename and refactorings for one window. Files with a
+/// language server use it; others (VB.NET above all) get IntelliSense from the project's own symbols.
 final class IntelliSense: CodeTextViewAssistant {
     var document: (CodeTextView) -> EditorDocument? = { _ in nil }
+    var documents: () -> [EditorDocument] = { [] }
+    var projectFolder: () -> URL? = { nil }
+    var diagnostics: (URL) -> [Diagnostic] = { _ in [] }
     var onOpenLocation: ((URL, Int, Int?) -> Void)?
     var onReferences: ((String, [LanguageSession.Location]) -> Void)?
     var onStatus: ((String) -> Void)?
@@ -264,21 +327,28 @@ final class IntelliSense: CodeTextViewAssistant {
     private var requestGeneration = 0
 
     private static let identifierCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_$"))
+    /// Languages where completion without a language server would only get in the way.
+    private static let plainLanguages: Set<String> = ["text", "markdown", "diff", "json", "yaml", "toml"]
+
+    private func usesBasic(_ document: EditorDocument) -> Bool {
+        document.session == nil && !Self.plainLanguages.contains(document.language.id) && document.textView.isEditable
+    }
 
     // MARK: Completion
 
     func textView(_ textView: CodeTextView, didInsert text: String) {
         closeHover()
-        guard let session = document(textView)?.session, !completion.isAccepting else { return }
+        guard let document = document(textView), !completion.isAccepting else { return }
         let isIdentifier = text.count == 1 && text.unicodeScalars.allSatisfy { Self.identifierCharacters.contains($0) }
         if completion.isVisible {
             if isIdentifier { return completion.refilter() }
             completion.hide()
         }
-        if let last = text.last, session.triggerCharacters.contains(String(last)) {
-            requestCompletion(textView, session: session)
-        } else if isIdentifier, wordStart(in: textView) == textView.selectedRange().location - 1 {
-            requestCompletion(textView, session: session)   // first letter of a new word
+        let triggers = document.session?.triggerCharacters ?? (usesBasic(document) ? ["."] : [])
+        if let last = text.last, triggers.contains(String(last)) {
+            requestCompletion(textView, document: document)
+        } else if isIdentifier, wordStart(in: textView) == textView.selectedRange().location - 1, document.session != nil || usesBasic(document) {
+            requestCompletion(textView, document: document)   // first letter of a new word
         }
     }
 
@@ -291,19 +361,57 @@ final class IntelliSense: CodeTextViewAssistant {
     }
 
     func textViewRequestedCompletion(_ textView: CodeTextView) {
-        guard let session = document(textView)?.session else { return NSSound.beep() }
-        requestCompletion(textView, session: session)
+        guard let document = document(textView), document.session != nil || usesBasic(document) else { return NSSound.beep() }
+        requestCompletion(textView, document: document, explicit: true)
     }
 
-    private func requestCompletion(_ textView: CodeTextView, session: LanguageSession) {
+    private func snippetItems(_ language: String) -> [LanguageSession.CompletionItem] {
+        SnippetStore.library.snippets(forLanguage: language).map {
+            LanguageSession.CompletionItem(label: $0.shortcut, detail: $0.title, kind: 15, text: $0.shortcut, filterText: $0.shortcut,
+                                           sortText: "~" + $0.shortcut, replaceStart: nil, snippet: $0.body)
+        }
+    }
+
+    private func requestCompletion(_ textView: CodeTextView, document: EditorDocument, explicit: Bool = false) {
         requestGeneration += 1
         let generation = requestGeneration
         let cursor = textView.selectedRange().location
-        session.completion(at: cursor) { [weak self, weak textView] items in
-            guard let self, let textView, generation == requestGeneration, !items.isEmpty else { return }
-            let start = items.compactMap(\.replaceStart).min() ?? wordStart(in: textView)
-            completion.show(items, in: textView, wordStart: min(start, textView.selectedRange().location))
+        guard let session = document.session else {
+            // No language server: keywords, the project's symbols, .NET classes (VB), snippets and words.
+            let symbols = ProjectIndex.shared.symbols(including: document)
+            let result = BasicIntelliSense.completions(text: textView.string, offset: cursor, languageId: document.language.id,
+                                                       symbols: symbols, snippets: SnippetStore.library.snippets(forLanguage: document.language.id))
+            let items = result.items.map {
+                LanguageSession.CompletionItem(label: $0.label, detail: $0.detail, kind: $0.kind, text: $0.text, filterText: $0.label,
+                                               sortText: ($0.kind == 1 ? "~~" : $0.kind == 15 ? "~" : "") + $0.label.lowercased(), replaceStart: nil, snippet: $0.snippetBody)
+            }
+            // Only open on its own when there's something better than words in the file.
+            guard !items.isEmpty, explicit || items.contains(where: { $0.kind != 1 }) else { return }
+            completion.show(items, in: textView, wordStart: result.wordStart)
+            return
         }
+        let language = document.language.id
+        session.completion(at: cursor) { [weak self, weak textView] items in
+            guard let self, let textView, generation == requestGeneration else { return }
+            let isMember = cursor > 0 && (textView.string as NSString).character(at: wordStart(in: textView) > 0 ? wordStart(in: textView) - 1 : 0) == 0x2E
+            let all = items + (isMember ? [] : snippetItems(language))
+            guard !all.isEmpty else { return }
+            let start = items.compactMap(\.replaceStart).min() ?? wordStart(in: textView)
+            completion.show(all, in: textView, wordStart: min(start, textView.selectedRange().location))
+        }
+    }
+
+    func textViewExpandSnippet(_ textView: CodeTextView) -> Bool {
+        guard let document = document(textView), textView.selectedRange().length == 0 else { return false }
+        let start = wordStart(in: textView)
+        let cursor = textView.selectedRange().location
+        guard cursor > start else { return false }
+        let word = (textView.string as NSString).substring(with: NSRange(location: start, length: cursor - start))
+        guard let snippet = SnippetStore.library.snippet(shortcut: word, languageId: document.language.id) else { return false }
+        completion.hide()
+        textView.setSelectedRange(NSRange(location: start, length: cursor - start))
+        textView.insertSnippet(snippet.toolboxItem)
+        return true
     }
 
     private func wordStart(in textView: NSTextView) -> Int {
@@ -329,6 +437,8 @@ final class IntelliSense: CodeTextViewAssistant {
         }
         if let session = document.session {
             session.hover(at: index, handler: show)
+        } else if usesBasic(document) {
+            show(BasicIntelliSense.hover(at: index, text: textView.string, languageId: document.language.id, symbols: ProjectIndex.shared.symbols(including: document)))
         } else {
             show(nil)
         }
@@ -370,9 +480,16 @@ final class IntelliSense: CodeTextViewAssistant {
     // MARK: Navigation
 
     func textView(_ textView: CodeTextView, goToDefinitionAt index: Int) {
-        guard let session = document(textView)?.session else {
-            onStatus?("Go to Definition needs IntelliSense for this language")
-            return NSSound.beep()
+        guard let document = document(textView) else { return }
+        guard let session = document.session else {
+            let symbols = ProjectIndex.shared.symbols(including: document)
+            guard let found = BasicIntelliSense.definition(at: index, text: textView.string, languageId: document.language.id, symbols: symbols),
+                  let url = found.url ?? document.url else {
+                onStatus?("No definition found")
+                return NSSound.beep()
+            }
+            onOpenLocation?(url, found.line, nil)
+            return
         }
         session.definition(at: index) { [weak self] locations in
             guard let location = locations.first else {
@@ -384,39 +501,154 @@ final class IntelliSense: CodeTextViewAssistant {
     }
 
     func findReferences(in textView: CodeTextView) {
-        guard let session = document(textView)?.session else { return NSSound.beep() }
+        guard let document = document(textView) else { return NSSound.beep() }
         let ns = textView.string as NSString
         let index = textView.selectedRange().location
-        let word = wordRange(in: ns, at: index).map { ns.substring(with: $0) } ?? "symbol"
-        session.references(at: index) { [weak self] in self?.onReferences?(word, $0) }
+        guard let range = wordRange(in: ns, at: index) else { return NSSound.beep() }
+        let word = ns.substring(with: range)
+        if let session = document.session {
+            session.references(at: index) { [weak self] in self?.onReferences?(word, $0) }
+            return
+        }
+        // Without a language server: every whole-word use in the project's files of this language.
+        let matches = wholeWordMatches(of: word, language: document.language)
+        onReferences?(word, matches.map { LanguageSession.Location(url: $0.url, line: $0.line, column: $0.column) })
     }
 
-    /// Asks for a new name and renames the symbol everywhere the language server knows about.
-    func rename(in textView: CodeTextView, documents: [EditorDocument]) {
-        guard let session = document(textView)?.session else { return NSSound.beep() }
+    /// Whole-word matches of a name in the project (open documents use their current text).
+    private func wholeWordMatches(of word: String, language: Language) -> [SearchMatch] {
+        let options = SearchOptions(matchCase: !language.caseInsensitiveKeywords, wholeWord: true, fileTypes: language.extensions.map { "*.\($0)" }.joined(separator: ";"))
+        guard let expression = FileSearch.expression(for: word, options: options) else { return [] }
+        let open = Dictionary(documents().compactMap { document in document.url.map { ($0.standardizedFileURL, document.textView.string) } }, uniquingKeysWith: { a, _ in a })
+        var files = projectFolder().map { FileSearch.files(in: $0, fileTypes: options.fileTypes) } ?? []
+        for url in open.keys where Languages.forFile(named: url.lastPathComponent).id == language.id && !files.contains(where: { $0.standardizedFileURL == url }) { files.append(url) }
+        return files.flatMap { url -> [SearchMatch] in
+            guard let text = open[url.standardizedFileURL] ?? FileSearch.text(of: url) else { return [] }
+            let masked = ExtractMethod.mask(text, language: language) as NSString
+            // Skip matches inside strings and comments.
+            return FileSearch.matches(in: text, url: url, expression: expression).filter { match in
+                let offset = TextLines(text).lineStarts[match.line - 1] + match.column - 1
+                return offset < masked.length && masked.character(at: offset) == (text as NSString).character(at: offset)
+            }
+        }
+    }
+
+    /// Asks for a new name and renames the symbol everywhere the language server knows about,
+    /// or (without a server) every whole-word use in the project's files of this language.
+    func rename(in textView: CodeTextView) {
+        guard let document = document(textView) else { return NSSound.beep() }
         let ns = textView.string as NSString
         let index = textView.selectedRange().location
         guard let range = wordRange(in: ns, at: index) else { return NSSound.beep() }
         let old = ns.substring(with: range)
-        guard let new = Prompt.ask("Rename “\(old)”", message: "Enter the new name. Every reference is updated.",
-                                   defaultValue: old, confirm: "Rename")?.trimmingCharacters(in: .whitespaces),
+        let message = document.session != nil ? "Enter the new name. Every reference is updated."
+            : "Enter the new name. Every “\(old)” in this project's \(document.language.name) files is renamed (whole words, not in strings or comments)."
+        guard let new = Prompt.ask("Rename “\(old)”", message: message, defaultValue: old, confirm: "Rename")?.trimmingCharacters(in: .whitespaces),
               !new.isEmpty, new != old else { return }
+        guard let session = document.session else {
+            let matches = wholeWordMatches(of: old, language: document.language)
+            var edits: LanguageSession.Edits = [:]
+            for match in matches {
+                let range: [String: Any] = ["start": ["line": match.line - 1, "character": match.column - 1],
+                                            "end": ["line": match.line - 1, "character": match.column - 1 + match.length]]
+                edits[match.url, default: []].append((range, new))
+            }
+            guard !edits.isEmpty else { return NSSound.beep() }
+            apply(edits, summary: "Renamed")
+            return
+        }
         session.rename(at: range.location, to: new) { [weak self] edits in
             guard !edits.isEmpty else {
                 self?.onStatus?("Nothing to rename here")
                 return NSSound.beep()
             }
-            var count = 0
-            for (url, list) in edits {
-                count += list.count
-                if let open = documents.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
-                    open.apply(list)
-                } else if var text = try? String(contentsOf: url, encoding: .utf8) {
-                    text = Self.apply(list, to: text)
-                    try? text.write(to: url, atomically: true, encoding: .utf8)
-                }
+            self?.apply(edits, summary: "Renamed")
+        }
+    }
+
+    /// Applies edits to open documents (undoable) and to files on disk.
+    func apply(_ edits: LanguageSession.Edits, summary: String = "Changed") {
+        var count = 0
+        for (url, list) in edits {
+            count += list.count
+            if let open = documents().first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
+                open.apply(list)
+            } else if var text = try? String(contentsOf: url, encoding: .utf8) {
+                text = Self.apply(list, to: text)
+                try? text.write(to: url, atomically: true, encoding: .utf8)
+                ProjectIndex.shared.update(url, text: text)
             }
-            self?.onStatus?("Renamed \(count) occurrence\(count == 1 ? "" : "s") in \(edits.count) file\(edits.count == 1 ? "" : "s")")
+        }
+        onStatus?("\(summary) \(count) occurrence\(count == 1 ? "" : "s") in \(edits.count) file\(edits.count == 1 ? "" : "s")")
+    }
+
+    // MARK: Refactoring
+
+    /// Quick Actions and Refactorings (⌥↩): the server's fixes and refactorings, plus Extract Method and Rename.
+    func showQuickActions(in textView: CodeTextView) {
+        guard let document = document(textView) else { return }
+        let selection = textView.selectedRange()
+        let show: ([LanguageSession.CodeAction]) -> Void = { [weak self, weak textView] actions in
+            guard let self, let textView else { return }
+            let menu = NSMenu(title: "Quick Actions")
+            menu.autoenablesItems = false
+            let sorted = actions.sorted { ($0.isPreferred ? 0 : 1, $0.kind.hasPrefix("quickfix") ? 0 : 1) < ($1.isPreferred ? 0 : 1, $1.kind.hasPrefix("quickfix") ? 0 : 1) }
+            for action in sorted.prefix(30) {
+                let item = ActionItem(title: action.title) { [weak self] in
+                    document.session?.perform(action) { self?.apply($0, summary: "Applied “\(action.title)”:") }
+                }
+                item.image = NSImage(systemSymbolName: action.kind.hasPrefix("quickfix") ? "lightbulb.fill" : "wrench.and.screwdriver", accessibilityDescription: nil)
+                menu.addItem(item)
+            }
+            let serverExtracts = actions.contains { $0.kind.hasPrefix("refactor.extract") && $0.title.lowercased().contains("method") || $0.title.lowercased().contains("extract function") }
+            if !serverExtracts, ExtractMethod.supports(languageId: document.language.id), selection.length > 0 {
+                if !menu.items.isEmpty { menu.addItem(.separator()) }
+                menu.addItem(ActionItem(title: "Extract Method…") { [weak self, weak textView] in if let textView { self?.extractMethod(in: textView) } })
+            }
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
+            menu.addItem(ActionItem(title: "Rename…") { [weak self, weak textView] in if let textView { self?.rename(in: textView) } })
+            let caret = textView.firstRect(forCharacterRange: NSRange(location: selection.location, length: 0), actualRange: nil)
+            guard let window = textView.window else { return }
+            let point = textView.convert(window.convertPoint(fromScreen: NSPoint(x: caret.minX, y: caret.minY)), from: nil)
+            menu.popUp(positioning: nil, at: point, in: textView)
+        }
+        guard let session = document.session else { return show([]) }
+        session.codeActions(range: selection, diagnostics: document.url.map(diagnostics) ?? []) { show($0) }
+    }
+
+    /// Extract Method (⌥⌘M): the language server's, when it has one; otherwise CodeForge's own.
+    func extractMethod(in textView: CodeTextView) {
+        guard let document = document(textView) else { return }
+        let selection = textView.selectedRange()
+        guard selection.length > 0 else {
+            onStatus?("Select the lines to extract first")
+            return NSSound.beep()
+        }
+        let builtIn = { [weak self, weak textView] in
+            guard let self, let textView else { return }
+            guard ExtractMethod.supports(languageId: document.language.id) else {
+                return Prompt.show("Extract Method isn't available here", message: ExtractMethod.Failure.unsupportedLanguage.localizedDescription, style: .informational)
+            }
+            guard let name = Prompt.ask("Extract Method", message: "Name of the new method:", defaultValue: ExtractMethod.defaultName(forLanguage: document.language.id),
+                                        confirm: "Extract")?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return }
+            switch ExtractMethod.extract(textView.string, selection: selection, languageId: document.language.id, name: name) {
+            case .success(let result):
+                let all = NSRange(location: 0, length: (textView.string as NSString).length)
+                guard textView.shouldChangeText(in: all, replacementString: result.text) else { return }
+                textView.textStorage?.replaceCharacters(in: all, with: result.text)
+                textView.didChangeText()
+                textView.setSelectedRange(result.nameRange)
+                textView.scrollRangeToVisible(result.nameRange)
+                onStatus?("Extracted method “\(name)”")
+            case .failure(let error):
+                Prompt.show("Couldn't extract a method", message: error.localizedDescription, style: .informational)
+            }
+        }
+        guard let session = document.session else { return builtIn() }
+        session.codeActions(range: selection, diagnostics: []) { [weak self] actions in
+            let extract = actions.first { $0.kind.hasPrefix("refactor.extract") && ($0.title.lowercased().contains("method") || $0.title.lowercased().contains("function")) }
+            guard let extract else { return builtIn() }
+            session.perform(extract) { self?.apply($0, summary: "Extracted:") }
         }
     }
 
@@ -446,6 +678,21 @@ final class IntelliSense: CodeTextViewAssistant {
         while isWord(end) { end += 1 }
         return end > start ? NSRange(location: start, length: end - start) : nil
     }
+}
+
+/// A menu item that runs a closure.
+final class ActionItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func run() { handler() }
 }
 
 /// The IntelliSense list that appears under the cursor.
@@ -568,7 +815,12 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let start = min(wordStart, cursor)
         hide()
         isAccepting = true
-        textView.insertText(item.text, replacementRange: NSRange(location: start, length: cursor - start))
+        if let body = item.snippet, let codeView = textView as? CodeTextView {
+            codeView.setSelectedRange(NSRange(location: start, length: cursor - start))
+            codeView.insertSnippet(ToolboxItem(item.label, "text.badge.plus", body))
+        } else {
+            textView.insertText(item.text, replacementRange: NSRange(location: start, length: cursor - start))
+        }
         isAccepting = false
     }
 

@@ -16,6 +16,7 @@ final class LanguageServer {
     private(set) var triggerCharacters: Set<String> = ["."]
     /// The server waits to be asked for diagnostics (`textDocument/diagnostic`) instead of publishing them.
     private(set) var pullsDiagnostics = false
+    private(set) var resolvesCodeActions = false
     private var readyActions: [() -> Void] = []
 
     /// (file, diagnostics) whenever the server publishes diagnostics.
@@ -72,9 +73,14 @@ final class LanguageServer {
                     "references": [:],
                     "rename": ["prepareSupport": false],
                     "publishDiagnostics": ["relatedInformation": false],
+                    "codeAction": [
+                        "codeActionLiteralSupport": ["codeActionKind": ["valueSet": ["", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source", "source.organizeImports"]]],
+                        "resolveSupport": ["properties": ["edit"]], "dataSupport": true, "isPreferredSupport": true,
+                    ],
                     "diagnostic": ["dynamicRegistration": false],
                 ],
-                "workspace": ["workspaceFolders": true, "configuration": true, "applyEdit": false],
+                "workspace": ["workspaceFolders": true, "configuration": true, "applyEdit": true,
+                              "workspaceEdit": ["documentChanges": true], "executeCommand": ["dynamicRegistration": false]],
             ],
         ]
         write(["jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params])
@@ -85,6 +91,7 @@ final class LanguageServer {
                 triggerCharacters = Set(characters.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             }
             pullsDiagnostics = capabilities?["diagnosticProvider"] != nil
+            resolvesCodeActions = (capabilities?["codeActionProvider"] as? [String: Any])?["resolveProvider"] as? Bool ?? false
             write(["jsonrpc": "2.0", "method": "initialized", "params": [String: Any]()])
             isReady = true
             queued.forEach(write)
@@ -148,6 +155,10 @@ final class LanguageServer {
                 var result: Any = NSNull()
                 if method == "workspace/configuration", let items = (message["params"] as? [String: Any])?["items"] as? [Any] {
                     result = Array(repeating: NSNull(), count: items.count)
+                } else if method == "workspace/applyEdit", let edit = (message["params"] as? [String: Any])?["edit"] {
+                    // Code actions that run a command send their changes back this way.
+                    LanguageServerManager.shared.onApplyEdit?(LanguageSession.workspaceEdits(edit))
+                    result = ["applied": true]
                 }
                 write(["jsonrpc": "2.0", "id": id, "result": result])
             } else if method == "textDocument/publishDiagnostics", let params = message["params"] as? [String: Any] {
@@ -181,6 +192,8 @@ final class LanguageServerManager {
     private var servers: [String: LanguageServer] = [:]
     private var xcrunCache: [String: URL?] = [:]
     var onDiagnostics: ((URL, [Diagnostic]) -> Void)?
+    /// Applies edits a server asks for (`workspace/applyEdit`).
+    var onApplyEdit: ((LanguageSession.Edits) -> Void)?
 
     /// Where CodeForge installs npm-based servers (Pyright, TypeScript).
     static let installDirectory: URL = {

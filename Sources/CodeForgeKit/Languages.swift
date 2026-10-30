@@ -230,7 +230,7 @@ public enum Languages {
         ),
         Language(
             id: "html", name: "HTML / XML", extensions: ["html", "htm", "xhtml", "xml", "svg", "plist", "vue", "csproj", "vbproj", "fsproj",
-                                                            "props", "targets", "slnx", "config", "xaml", "resx", "nuspec"],
+                                                            "props", "targets", "slnx", "config", "xaml", "axaml", "resx", "nuspec"],
             blockComment: ("<!--", "-->"), capitalizedTypes: false, highlightNumbers: false,
             patterns: [(#"</?[A-Za-z][\w:.-]*|/?>"#, .tag), (#"\b[\w:-]+(?==)"#, .attribute), (#"&#?\w+;"#, .number)],
             runCommand: "open {file}"

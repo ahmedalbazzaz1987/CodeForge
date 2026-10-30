@@ -126,14 +126,23 @@ enum MainMenu {
             find.add("Find Next", finder, "g").tag = NSTextFinder.Action.nextMatch.rawValue
             find.add("Find Previous", finder, "g", [.command, .shift]).tag = NSTextFinder.Action.previousMatch.rawValue
             find.add("Use Selection for Find", finder, "e").tag = NSTextFinder.Action.setSearchString.rawValue
-            menu.add("Find", nil).submenu = find
+            find.addItem(.separator())
+            find.add("Find in Files…", #selector(WorkspaceWindowController.findInFiles(_:)), "f", [.command, .shift])
+            find.add("Replace in Files…", #selector(WorkspaceWindowController.replaceInFiles(_:)), "h", [.command, .shift])
+            menu.add("Find and Replace", nil).submenu = find
             menu.addItem(.separator())
             menu.add("Go to Line…", #selector(CodeTextView.goToLine(_:)), "l")
             menu.addItem(.separator())
             menu.add("Show Completions", #selector(CodeTextView.showCompletions(_:)), " ", .control)
             menu.add("Go to Definition", #selector(WorkspaceWindowController.goToDefinition(_:)), MainMenu.functionKey(NSF12FunctionKey), [])
             menu.add("Find All References", #selector(WorkspaceWindowController.findAllReferences(_:)), MainMenu.functionKey(NSF12FunctionKey), .shift)
-            menu.add("Rename…", #selector(WorkspaceWindowController.renameSymbol(_:)), MainMenu.functionKey(NSF2FunctionKey), [])
+            let refactor = NSMenu(title: "Refactor")
+            refactor.add("Quick Actions and Refactorings…", #selector(WorkspaceWindowController.showQuickActions(_:)), "\r", .option)
+            refactor.addItem(.separator())
+            refactor.add("Rename…", #selector(WorkspaceWindowController.renameSymbol(_:)), MainMenu.functionKey(NSF2FunctionKey), [])
+            refactor.add("Extract Method…", #selector(WorkspaceWindowController.extractMethod(_:)), "m", [.command, .option])
+            menu.add("Refactor", nil).submenu = refactor
+            menu.add("Insert Snippet…", #selector(WorkspaceWindowController.showSnippetsManager(_:)))
             menu.addItem(.separator())
             menu.add("Toggle Comment", #selector(CodeTextView.toggleComment(_:)), "/")
             menu.add("Indent", #selector(CodeTextView.indentSelection(_:)), "]")
@@ -144,12 +153,21 @@ enum MainMenu {
             menu.add("Hide Explorer", #selector(WorkspaceWindowController.toggleExplorer(_:)), "b")
             menu.add("Move Explorer to Left", #selector(WorkspaceWindowController.toggleExplorerSide(_:)))
             menu.add("Hide Toolbox", #selector(WorkspaceWindowController.toggleToolbox(_:)), "x", [.command, .option])
+            menu.add("Server Explorer", #selector(WorkspaceWindowController.showServerExplorer(_:)), "s", [.command, .control])
+            menu.add("Class View", #selector(WorkspaceWindowController.showClassView(_:)), "c", [.command, .shift])
+            menu.add("Object Browser", #selector(WorkspaceWindowController.showObjectBrowser(_:)), "j", [.command, .option])
             menu.add("Hide Properties Window", #selector(WorkspaceWindowController.toggleProperties(_:)), MainMenu.functionKey(NSF4FunctionKey), [])
             menu.add("Hide Panel", #selector(WorkspaceWindowController.toggleConsole(_:)), "y", [.command, .shift])
             menu.add("Output", #selector(WorkspaceWindowController.showOutput(_:)), "u", [.command, .shift])
             menu.add("Error List", #selector(WorkspaceWindowController.showErrorList(_:)), "m", [.command, .shift])
+            menu.add("Find Results", #selector(WorkspaceWindowController.showFindResults(_:)))
+            menu.add("Query Results", #selector(WorkspaceWindowController.showQueryResults(_:)))
             menu.add("Terminal", #selector(WorkspaceWindowController.showTerminal(_:)), "`", .control)
             menu.add("Show CodeLens", #selector(WorkspaceWindowController.toggleCodeLens(_:)))
+            let toolbars = NSMenu(title: "Toolbars")
+            toolbars.add("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option])
+            toolbars.add("Customize…", #selector(WorkspaceWindowController.customizeToolbar(_:)))
+            menu.add("Toolbars", nil).submenu = toolbars
             menu.addItem(.separator())
             menu.add("Bigger", #selector(WorkspaceWindowController.increaseFontSize(_:)), "+")
             menu.add("Smaller", #selector(WorkspaceWindowController.decreaseFontSize(_:)), "-")
@@ -209,9 +227,14 @@ enum MainMenu {
         }
 
         main.addSubmenu("Tools") { menu in
+            menu.add("Connect to Database…", #selector(WorkspaceWindowController.connectToDatabase(_:)))
+            menu.add("Execute Query", #selector(WorkspaceWindowController.executeQuery(_:)), "e", [.command, .shift])
+            menu.addItem(.separator())
+            menu.add("Code Snippets Manager…", #selector(WorkspaceWindowController.showSnippetsManager(_:)), "b", [.command, .control])
             menu.add("Terminal", #selector(WorkspaceWindowController.showTerminal(_:)))
             menu.add("Manage NuGet Packages…", #selector(WorkspaceWindowController.manageNuGetPackages(_:)))
             menu.addItem(.separator())
+            menu.add("Customize Toolbar…", #selector(WorkspaceWindowController.customizeToolbar(_:)))
             menu.add("Options…", #selector(WorkspaceWindowController.showOptions(_:)))
         }
 

@@ -80,6 +80,28 @@ public enum BuildSystem {
         return nil
     }
 
+    /// The .NET project file in a folder, or in the first subfolder that has one (a solution's project).
+    public static func dotnetProject(in folder: URL) -> URL? {
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
+        if let name = names.first(where: { [".csproj", ".vbproj", ".fsproj"].contains(where: $0.hasSuffix) }) { return folder.appendingPathComponent(name) }
+        return firstProject(below: folder).map { URL(fileURLWithPath: $0, relativeTo: folder).standardizedFileURL }
+    }
+
+    /// The program a .NET build produced (bin/Debug/<framework>/<assembly>.dll), newest first, for the debugger.
+    public static func dotnetAssembly(project: URL, configuration: BuildConfiguration = .debug) -> URL? {
+        let text = (try? String(contentsOf: project, encoding: .utf8)) ?? ""
+        let name = firstMatch(#"<AssemblyName>\s*([^<]+?)\s*</AssemblyName>"#, in: text) ?? project.deletingPathExtension().lastPathComponent
+        let bin = project.deletingLastPathComponent().appendingPathComponent("bin").appendingPathComponent(configuration.rawValue)
+        let frameworks = (try? FileManager.default.contentsOfDirectory(at: bin, includingPropertiesForKeys: nil)) ?? []
+        return frameworks.map { $0.appendingPathComponent(name + ".dll") }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .max { modified($0) < modified($1) }
+    }
+
+    private static func modified(_ url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+    }
+
     /// Recognizes the project in a folder from the files at its top level.
     public static func detect(in folder: URL) -> BuildPlan? {
         let fm = FileManager.default
@@ -94,8 +116,14 @@ public enum BuildSystem {
             var runTarget = ""
             if dotnetProject == nil, let project = firstProject(below: folder) { runTarget = " --project " + CommandTemplate.shellQuote(project) }
             let name = ((dotnetProject ?? solution)! as NSString).deletingPathExtension
+            var run = "dotnet run" + runTarget
+            // .NET MAUI targets several platforms; on a Mac, Start runs the Mac Catalyst one.
+            if let project = dotnetProject, read(project).contains("<UseMaui>true</UseMaui>"),
+               let catalyst = firstMatch(#"(net\d+\.\d+-maccatalyst)"#, in: read(project)) {
+                run = "dotnet build -t:Run -f " + catalyst
+            }
             return BuildPlan(name: ".NET (\(name))", build: "dotnet build", clean: "dotnet clean", folder: path,
-                             run: "dotnet run" + runTarget, languages: ["csharp", "vb", "fsharp", "razor", "html", "css", "javascript", "json"])
+                             run: run, languages: ["csharp", "vb", "fsharp", "razor", "html", "css", "javascript", "json"])
         }
         if names.contains("Package.swift") {
             let manifest = read("Package.swift")

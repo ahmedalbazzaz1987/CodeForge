@@ -9,23 +9,36 @@ Releases.
 
 - **Native and light.** Written in Swift with AppKit. It starts instantly and runs on Apple Silicon and Intel Macs
   with macOS 14 or later.
-- **Visual Studio-style layout.** Light and dark themes, explorer on the right, docked bottom panel and a colored
-  status bar (blue when ready, orange while running).
+- **Visual Studio-style layout.** Toolbox and Server Explorer on the left, Solution Explorer, Git Changes and Class View
+  on the right, a docked bottom panel and a colored status bar. Color themes: Light, Dark, Blue, High Contrast, Monokai,
+  Dracula and Solarized. The toolbar can be customized (View ▸ Toolbars ▸ Customize…).
 - **Start fast.** File ▸ New Project… creates a ready-to-run project for Python, C, C++, Swift, Node.js, TypeScript,
   web pages, Go, Rust or Java. You can also clone a Git repository straight from the Start page.
 - **Toolbox, designer and Properties.** A Visual Studio-style Toolbox with HTML controls, Bootstrap components, ASP.NET
   Tag Helpers and C#, VB.NET, SwiftUI, Python and JavaScript snippets (double-click or drag into the editor). HTML pages
   have Design / Split / Source views, and the Properties window edits the attributes of the selected element.
 - **Visual Studio menus and tools.** Project ▸ Add New Item, NuGet packages, a Debug/Release configuration box, Test ▸
-  Run All Tests and Tools ▸ Options.
-- **.NET.** VB.NET, C# and ASP.NET Core: New Project templates (Razor Pages, MVC, Web API, Blazor, console and class
-  libraries), Build and Start with `dotnet`, MSBuild errors in the Error List, and C# IntelliSense.
+  Run All Tests, Tools ▸ Options and the Code Snippets Manager.
+- **Find and Replace in Files** (⇧⌘F / ⇧⌘H) across the whole project, with match case, whole word, regular expressions
+  and file types, and results in a Find Results tab.
+- **Refactoring.** Quick Actions and Refactorings (⌥↩), Rename (F2) and Extract Method (⌥⌘M), for every language with a
+  language server and, built in, for VB.NET, C#, Python, JavaScript, TypeScript and Swift.
+- **Class View and Object Browser.** The project's namespaces, classes and members (⇧⌘C), and an Object Browser (⌥⌘J)
+  with your types and common .NET classes.
+- **Server Explorer.** Connect to SQLite files, PostgreSQL, MySQL and SQL Server, browse tables, views and columns, show
+  table data and run SQL queries (⇧⌘E) with results in a grid.
+- **Code snippets.** Type a shortcut such as `prop`, `ctor`, `foreach` or `cw` and press Tab. Add your own in Tools ▸ Code
+  Snippets Manager; they also appear in IntelliSense and the Toolbox.
+- **.NET.** VB.NET, C#, F# and ASP.NET Core: New Project templates (Razor Pages, MVC, Web API, Empty, gRPC, Blazor,
+  Worker Service, .NET MAUI, Avalonia desktop apps with XAML, xUnit/MSTest/NUnit tests, console and class libraries),
+  Build and Start with `dotnet`, MSBuild errors in the Error List, C# IntelliSense, VB.NET IntelliSense, and debugging.
 - **Many languages.** Syntax highlighting for Swift, Python, JavaScript, TypeScript, C, C++, Objective-C, Java, Kotlin,
   C#, VB.NET, F#, Razor, Go, Rust, Ruby, PHP, Shell, Lua, SQL, HTML/XML, CSS, JSON, YAML, TOML, Markdown, Makefile and Dockerfile.
 - **IntelliSense.** Completions, quick info on hover, Go to Definition (F12 / ⌘-click), Find All References (⇧F12),
-  Rename (F2) and live error squiggles, powered by standard language servers.
+  Rename (F2) and live error squiggles, powered by standard language servers. VB.NET, which has no language server, gets
+  CodeForge's own IntelliSense: member lists from your project and common .NET classes, hover info and Go to Definition.
 - **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
-  Debug Python (debugpy) and C, C++, Objective-C, Swift, Rust and Go (LLDB): breakpoints (F9), stepping
+  Debug C#, VB.NET and F# (netcoredbg), Python (debugpy) and C, C++, Objective-C, Swift, Rust and Go (LLDB): breakpoints (F9), stepping
   (F10 / F11 / ⇧F11), Locals, Call Stack and an expression evaluator.
 - **Git built in.** A Git Changes panel to stage, commit, switch branches, pull and push, diffs and history, and the
   branch in the status bar. **CodeLens** shows reference counts and who last changed each function.
@@ -79,6 +92,11 @@ open dist/CodeForge.app
 | Toolbox / Properties window | ⌥⌘X / F4 |
 | Output / Error List / Terminal | ⇧⌘U / ⇧⌘M / ⌃` |
 | Find / Find and Replace | ⌘F / ⌥⌘F |
+| Find in Files / Replace in Files | ⇧⌘F / ⇧⌘H |
+| Quick Actions and Refactorings / Extract Method | ⌥↩ / ⌥⌘M |
+| Class View / Object Browser / Server Explorer | ⇧⌘C / ⌥⌘J / ⌃⌘S |
+| Execute SQL query / Code Snippets Manager | ⇧⌘E / ⌃⌘B |
+| Expand a code snippet | type its shortcut, then Tab |
 | Go to line | ⌘L |
 | Toggle comment / indent / outdent | ⌘/ / ⌘] / ⌘[ |
 | Show completions | ⌃Space or Esc |
@@ -102,13 +120,17 @@ CodeForge talks to standard language servers. The status bar shows which one is 
 | C# | csharp-ls | Click **Install C# IntelliSense…** in the status bar (needs the .NET SDK) |
 | Go | gopls | `go install golang.org/x/tools/gopls@latest` |
 | Rust | rust-analyzer | `rustup component add rust-analyzer` |
+| VB.NET (and others without a server) | CodeForge's own | Built in |
 
 Servers that CodeForge installs live in `~/Library/Application Support/<bundle id>/LanguageServers`. Find All
 References in Swift needs a built Swift package (the index comes from the build).
 
 ### Debugging
 
-Press **F5**. For Python files, CodeForge runs the script under [debugpy](https://github.com/microsoft/debugpy); the
+Press **F5**. For .NET projects (C#, VB.NET, F#, ASP.NET Core), CodeForge builds the Debug configuration and runs the
+program under [netcoredbg](https://github.com/Samsung/netcoredbg), Samsung's open-source .NET debugger; the first time,
+it offers to download it (about 15 MB) into its own folder. (Microsoft's own .NET debugger is licensed only for
+Microsoft's products.) For Python files, CodeForge runs the script under [debugpy](https://github.com/microsoft/debugpy); the
 first time, it offers to install debugpy into its own folder (it needs `python3`). For compiled languages, it builds the
 project (or the current file) with debug information and starts it under LLDB, using `lldb-dap` from Xcode. When it stops at a breakpoint, the **Debug** tab shows local variables and the call stack,
 and you can evaluate expressions.
@@ -135,8 +157,16 @@ VB.NET/C# template. **Start** (⌘R) runs `dotnet run` for the project, and web 
 C# and VB.NET appear in the Error List.
 
 ASP.NET Core uses C# for pages and APIs; VB.NET works for console apps and class libraries. Classic ASP.NET Web Forms
-(`.aspx`) and Windows Forms/WPF designers need Windows, so they aren't available on a Mac. Debugging .NET code isn't
-supported yet.
+(`.aspx`) and Windows Forms/WPF designers need Windows, so they aren't available on a Mac. For desktop apps with XAML
+windows on a Mac, use the **Avalonia** templates (the closest thing to WPF) or **.NET MAUI** (needs
+`dotnet workload install maui` and Xcode).
+
+### Server Explorer
+
+Click **Server Explorer** above the Toolbox (or View ▸ Server Explorer), then **+**. SQLite files work out of the box.
+PostgreSQL, MySQL/MariaDB and SQL Server use their command-line clients (`brew install libpq`, `brew install
+mysql-client`, `brew install sqlcmd`); passwords are kept only until you quit. Double-click a table to see its first 200
+rows, or click the query button to open a SQL tab and run it with **Tools ▸ Execute Query** (⇧⌘E).
 
 ### How files run
 
@@ -174,7 +204,8 @@ To sign with an Apple Developer ID instead of the default ad-hoc signature, pass
 ## Project layout
 
 ```
-Sources/CodeForgeKit/   Languages, tokenizer, error parsing, templates, build detection, LSP and Git parsing (no UI; unit-tested)
+Sources/CodeForgeKit/   Languages, tokenizer, error parsing, templates, build detection, LSP and Git parsing, symbols,
+                        refactoring, find in files, snippets, themes, databases (no UI; unit-tested)
 Sources/CodeForge/      The AppKit app: window, editor, IntelliSense, debugger, Git panel, explorer, bottom panel, updater
 Tests/                  Unit tests for CodeForgeKit
 scripts/                build-app.sh, release.sh, make-icon.swift

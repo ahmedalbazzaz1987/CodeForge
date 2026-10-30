@@ -4,13 +4,15 @@ import CodeForgeKit
 /// The docked panel under the editor: Output, Error List and Terminal tabs.
 final class BottomPanel: NSView {
     enum Tab: Int, CaseIterable {
-        case output, errors, references, debug, terminal
-        var title: String { ["Output", "Error List", "References", "Debug", "Terminal"][rawValue] }
+        case output, errors, references, findResults, queryResults, debug, terminal
+        var title: String { ["Output", "Error List", "References", "Find Results", "Query Results", "Debug", "Terminal"][rawValue] }
     }
 
     let output = ConsoleView()
     let errors = ErrorListView()
     let references = ReferencesView()
+    let findResults = ReferencesView(placeholder: "Use Find in Files (⇧⌘F) to search the whole project.")
+    let queryResults = QueryResultsView()
     let debug = DebugPanel()
     let terminal = TerminalView()
     var onHide: (() -> Void)?
@@ -55,7 +57,7 @@ final class BottomPanel: NSView {
     func show(_ tab: Tab) {
         selected = tab
         content.subviews.forEach { $0.removeFromSuperview() }
-        let view: NSView = [output, errors, references, debug, terminal][tab.rawValue]
+        let view: NSView = [output, errors, references, findResults, queryResults, debug, terminal][tab.rawValue]
         view.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(view)
         NSLayoutConstraint.activate([
@@ -75,6 +77,7 @@ final class BottomPanel: NSView {
             var title = tab.title
             if tab == .errors, errors.count > 0 { title += "  \(errors.count)" }
             if tab == .references, references.count > 0 { title += "  \(references.count)" }
+            if tab == .findResults, findResults.count > 0 { title += "  \(findResults.count)" }
             button.attributedTitle = NSAttributedString(string: title, attributes: [
                 .font: NSFont.systemFont(ofSize: 11, weight: tab == selected ? .semibold : .regular),
                 .foregroundColor: tab == selected ? NSColor.labelColor : NSColor.secondaryLabelColor,
@@ -90,6 +93,8 @@ final class BottomPanel: NSView {
         case .output: output.clear(nil)
         case .errors: errors.set([], folder: nil)
         case .references: references.set(title: "", [])
+        case .findResults: findResults.set(summary: nil, matches: [])
+        case .queryResults: queryResults.clear()
         case .debug: debug.clear()
         case .terminal: terminal.clear()
         }
@@ -202,14 +207,17 @@ final class ErrorListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
 /// The References tab: results of Find All References. Double-click to go there.
 final class ReferencesView: NSView, NSTableViewDataSource, NSTableViewDelegate {
     var onOpen: ((URL, Int, Int) -> Void)?
-    private var rows: [(location: LanguageSession.Location, preview: String)] = []
+    private var rows: [(location: LanguageSession.Location, preview: String, match: NSRange?)] = []
     private let table = NSTableView()
-    private let summary = NSTextField(labelWithString: "Use Find All References (⇧F12) on a symbol.")
+    private let placeholder: String
+    private let summary: NSTextField
 
     var count: Int { rows.count }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init(placeholder: String = "Use Find All References (⇧F12) on a symbol.") {
+        self.placeholder = placeholder
+        summary = NSTextField(labelWithString: placeholder)
+        super.init(frame: .zero)
         for (id, title, width) in [("file", "File", 180.0), ("line", "Line", 50.0), ("preview", "Code", 600.0)] {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
             column.title = title
@@ -251,11 +259,25 @@ final class ReferencesView: NSView, NSTableViewDataSource, NSTableViewDelegate {
             let lines = cache[location.url] ?? (try? String(contentsOf: location.url, encoding: .utf8))?.components(separatedBy: "\n") ?? []
             cache[location.url] = lines
             let preview = lines.indices.contains(location.line - 1) ? lines[location.line - 1].trimmingCharacters(in: .whitespaces) : ""
-            return (location, preview)
+            return (location, preview, nil)
         }
         let files = Set(locations.map(\.url)).count
-        summary.stringValue = title.isEmpty ? "Use Find All References (⇧F12) on a symbol."
+        summary.stringValue = title.isEmpty ? placeholder
             : "\(locations.count) reference\(locations.count == 1 ? "" : "s") to “\(title)” in \(files) file\(files == 1 ? "" : "s")"
+        table.reloadData()
+    }
+
+    /// Find in Files results, with the matched text highlighted.
+    func set(summary text: String?, matches: [SearchMatch]) {
+        rows = matches.map { match in
+            // Show the line without its indentation; keep the highlight on the match.
+            let indent = match.preview.prefix { $0 == " " || $0 == "\t" }.utf16.count
+            let preview = String(match.preview.dropFirst(match.preview.prefix { $0 == " " || $0 == "\t" }.count))
+            let start = max(match.column - 1 - indent, 0)
+            return (LanguageSession.Location(url: match.url, line: match.line, column: match.column), preview,
+                    NSRange(location: start, length: min(match.length, max((preview as NSString).length - start, 0))))
+        }
+        summary.stringValue = text ?? placeholder
         table.reloadData()
     }
 
@@ -263,6 +285,17 @@ final class ReferencesView: NSView, NSTableViewDataSource, NSTableViewDelegate {
 
     func tableView(_ tableView: NSTableView, viewFor column: NSTableColumn?, row: Int) -> NSView? {
         let item = rows[row]
+        if column?.identifier.rawValue == "preview", let match = item.match {
+            let font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
+            let text = NSMutableAttributedString(string: item.preview, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+            if NSMaxRange(match) <= text.length {
+                text.addAttributes([.backgroundColor: Theme.searchMatch, .font: NSFont.monospacedSystemFont(ofSize: 11.5, weight: .semibold)], range: match)
+            }
+            let field = NSTextField(labelWithAttributedString: text)
+            field.lineBreakMode = .byTruncatingTail
+            field.toolTip = item.location.url.path
+            return field
+        }
         let text: String
         switch column?.identifier.rawValue {
         case "file": text = item.location.url.lastPathComponent

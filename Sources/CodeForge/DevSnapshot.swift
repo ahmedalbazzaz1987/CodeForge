@@ -9,6 +9,12 @@ import CodeForgeKit
 ///   CF_ACTION=selector:        send one more action to the window controller first (e.g. showTerminal:)
 ///   CF_TERMINAL="ls"           type a command into the Terminal tab first
 ///   CF_LSP_PROBE=word          print completion, hover and definition results for the first "word" in the open file
+///   CF_SELECT=a..b             select from the first "a" to the end of the first "b" after it (or just "a")
+///   CF_TYPE=text               type at the cursor; a tab character presses Tab
+///   CF_ACTIONS=a:,b:           several actions, 0.7 s apart
+///   CF_ANSWER=text             answer every prompt with this text ("" keeps the suggested value) and confirm every question
+///   CF_FIND=text               run Find in Files for text
+///   CF_TABLE=name              show the first rows of a table from the first Server Explorer connection
 enum DevSnapshot {
     static func runIfRequested(_ controller: WorkspaceWindowController) {
         let env = ProcessInfo.processInfo.environment
@@ -39,6 +45,53 @@ enum DevSnapshot {
                 let body = ns.range(of: "<body>")
                 textView.setSelectedRange(NSRange(location: NSMaxRange(ns.lineRange(for: body)) , length: 0))
                 textView.insertSnippet(item)
+            }
+        }
+        if let selection = env["CF_SELECT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard let textView = find(controller.window!.contentView!, CodeTextView.self) else { return }
+                let ns = textView.string as NSString
+                let parts = selection.components(separatedBy: "..")
+                let start = ns.range(of: parts[0])
+                var end = NSMaxRange(start)
+                if parts.count > 1 { end = NSMaxRange(ns.range(of: parts[1], options: [], range: NSRange(location: start.location, length: ns.length - start.location))) }
+                textView.setSelectedRange(NSRange(location: start.location, length: end - start.location))
+            }
+        }
+        if let text = env["CF_TYPE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                guard let textView = find(controller.window!.contentView!, CodeTextView.self) else { return }
+                controller.window?.makeFirstResponder(textView)
+                for character in text {
+                    if character == "\t" { textView.doCommand(by: #selector(NSResponder.insertTab(_:))) } else { textView.insertText(String(character), replacementRange: textView.selectedRange()) }
+                }
+            }
+        }
+        if let actions = env["CF_ACTIONS"] {
+            for (index, action) in actions.split(separator: ",").enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8 + Double(index) * 0.7) { _ = controller.perform(NSSelectorFromString(String(action)), with: nil) }
+            }
+        }
+        if let text = env["CF_FIND"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { FindInFilesWindow.shared.debugFindAll(text) }
+        }
+        if let table = env["CF_TABLE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { controller.debugShowTable(table) }
+        }
+        if env["CF_CODE_ACTIONS"] != nil {
+            // Print the code actions the language server offers for the selection.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                guard let textView = find(controller.window!.contentView!, CodeTextView.self),
+                      let session = controller.documentForProbe(textView)?.session else { return print("ACTIONS: no session") }
+                session.codeActions(range: textView.selectedRange(), diagnostics: []) { actions in
+                    print("ACTIONS:", actions.map { "\($0.kind): \($0.title)" })
+                    if let name = env["CF_PERFORM"], let action = actions.first(where: { $0.title.contains(name) }) {
+                        session.perform(action) { edits in
+                            print("PERFORM edits:", edits.values.map(\.count))
+                            controller.documentForProbe(textView)?.apply(edits.values.first ?? [])
+                        }
+                    }
+                }
             }
         }
         if let action = env["CF_ACTION"] {

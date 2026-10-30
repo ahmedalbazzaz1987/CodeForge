@@ -2,6 +2,63 @@ import AppKit
 import CodeForgeKit
 import WebKit
 
+/// The left-hand column: Toolbox and Server Explorer, as tabs like Visual Studio's.
+final class ToolPane: NSView {
+    let toolbox: ToolboxView
+    let servers = ServerExplorerView()
+    private let switcher = NSSegmentedControl(labels: ["Toolbox", "Server Explorer"], trackingMode: .selectOne, target: nil, action: nil)
+    private let content = NSView()
+
+    init(toolbox: ToolboxView) {
+        self.toolbox = toolbox
+        super.init(frame: .zero)
+        switcher.target = self
+        switcher.action = #selector(switched)
+        switcher.controlSize = .small
+        switcher.segmentDistribution = .fillEqually
+        for view in [switcher, content] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            switcher.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            switcher.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            switcher.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            content.topAnchor.constraint(equalTo: switcher.bottomAnchor, constant: 2),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        show(UserDefaults.standard.integer(forKey: "toolPaneTab"))
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    var showsServers: Bool { switcher.selectedSegment == 1 }
+
+    func show(_ index: Int) {
+        switcher.selectedSegment = index
+        UserDefaults.standard.set(index, forKey: "toolPaneTab")
+        content.subviews.forEach { $0.removeFromSuperview() }
+        let view: NSView = index == 1 ? servers : toolbox
+        view.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: content.topAnchor),
+            view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+    }
+
+    @objc private func switched() { show(switcher.selectedSegment) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        Theme.sidebar.setFill()
+        bounds.fill()
+    }
+}
+
 /// Visual Studio-style Toolbox: controls and snippets for the current file. Double-click or drag into the editor.
 final class ToolboxView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate, NSSearchFieldDelegate {
     var onInsert: ((ToolboxItem) -> Void)?
@@ -68,10 +125,15 @@ final class ToolboxView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate,
         bounds.fill()
     }
 
-    func show(language: Language?) {
-        guard language?.name ?? "" != languageName || groups.isEmpty else { return }
+    func show(language: Language?, force: Bool = false) {
+        guard force || language?.name ?? "" != languageName || groups.isEmpty else { return }
         languageName = language?.name ?? ""
         groups = language.map { ToolboxCatalog.groups(forLanguage: $0.id) } ?? []
+        // The code snippets for this language (Tools ▸ Code Snippets Manager), Visual Studio's "General" tab.
+        if let id = language?.id {
+            let snippets = SnippetStore.library.snippets(forLanguage: id)
+            if !snippets.isEmpty { groups.append(ToolboxGroup(name: "Code Snippets", items: snippets.map(\.toolboxItem))) }
+        }
         empty.stringValue = language == nil
             ? "Open a file to see its controls and snippets."
             : "There are no usable controls in this group for \(language!.name) files. Open an HTML, Razor, C#, VB.NET, Swift, Python or JavaScript file."
