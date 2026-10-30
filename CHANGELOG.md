@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2
+
+- Design view: stray clicks that land on the page root (`<html>`) no longer replace the selected element in the Properties window.
+
 ## 0.8.1
 
 - Properties window: changes always apply to the element it shows, even if the cursor moved in the meantime.

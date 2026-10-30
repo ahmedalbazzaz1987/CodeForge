@@ -321,6 +321,7 @@ final class DesignHost: NSView, WKScriptMessageHandler, WKNavigationDelegate {
               event.preventDefault(); event.stopPropagation();
               if (event.detail === 0) { return; }   // keyboard-made clicks (Return, Space) don't select
               var element = event.target, tag = element.tagName.toLowerCase();
+              if (tag === 'html' || tag === 'head') { return; }   // stray clicks on the page root keep the current selection
               var index = Array.prototype.indexOf.call(document.getElementsByTagName(tag), element);
               document.querySelectorAll('[data-codeforge-selected]').forEach(function (e) { e.removeAttribute('data-codeforge-selected'); e.style.outline = ''; });
               element.setAttribute('data-codeforge-selected', '1');
