@@ -13,6 +13,9 @@ Releases.
   status bar (blue when ready, orange while running).
 - **Start fast.** File ▸ New Project… creates a ready-to-run project for Python, C, C++, Swift, Node.js, TypeScript,
   web pages, Go, Rust or Java. You can also clone a Git repository straight from the Start page.
+- **Toolbox, designer and Properties.** A Visual Studio-style Toolbox with HTML controls, Bootstrap components, ASP.NET
+  Tag Helpers and C#, VB.NET, SwiftUI, Python and JavaScript snippets (double-click or drag into the editor). HTML pages
+  have Design / Split / Source views, and the Properties window edits the attributes of the selected element.
 - **.NET.** VB.NET, C# and ASP.NET Core: New Project templates (Razor Pages, MVC, Web API, Blazor, console and class
   libraries), Build and Start with `dotnet`, MSBuild errors in the Error List, and C# IntelliSense.
 - **Many languages.** Syntax highlighting for Swift, Python, JavaScript, TypeScript, C, C++, Objective-C, Java, Kotlin,
@@ -69,6 +72,7 @@ open dist/CodeForge.app
 | Step Over / Step Into / Step Out | F10 / F11 / ⇧F11 |
 | Set the project's run command | ⇧⌘R |
 | Show or hide the explorer / bottom panel | ⌘B / ⇧⌘Y |
+| Toolbox / Properties window | ⌥⌘X / F4 |
 | Output / Error List / Terminal | ⇧⌘U / ⇧⌘M / ⌃` |
 | Find / Find and Replace | ⌘F / ⌥⌘F |
 | Go to line | ⌘L |

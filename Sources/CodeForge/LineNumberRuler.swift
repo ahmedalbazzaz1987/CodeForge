@@ -38,6 +38,8 @@ final class LineNumberRuler: NSRulerView {
         return low
     }
 
+    var lineCount: Int { lineStarts.count }
+
     func lineStart(_ line: Int) -> Int { lineStarts[min(max(line, 0), lineStarts.count - 1)] }
 
     @objc func textDidChange() {

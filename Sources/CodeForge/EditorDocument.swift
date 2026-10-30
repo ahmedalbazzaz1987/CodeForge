@@ -30,6 +30,8 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     }
     private var diagnosticRanges: [(range: NSRange, message: String)] = []
     var onStateChange: (() -> Void)?
+    /// Called after every edit (the design view uses it to refresh).
+    var onTextChange: (() -> Void)?
     var onSelectionChange: (() -> Void)?
 
     var displayName: String { url?.lastPathComponent ?? untitledName }
@@ -258,7 +260,8 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         let text = textView.string
         isDirty = (text as NSString).length > 2_000_000 || text != savedText
-        if !textView.lenses.isEmpty { textView.lenses = [:] }   // positions are stale until the next save
+        if !textView.lenses.isEmpty { textView.lenses = [:] }
+        onTextChange?()   // positions are stale until the next save
         if hasDiagnostics { setDiagnostics([]) }
         session?.textChanged()
         rehighlight()

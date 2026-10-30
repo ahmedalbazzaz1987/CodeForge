@@ -207,6 +207,24 @@ final class CodeTextView: NSTextView {
 
     // MARK: Line commands (Edit menu)
 
+    /// Inserts a Toolbox item at the cursor, indented to match the line, with the cursor where the item says.
+    func insertSnippet(_ item: ToolboxItem) {
+        let ns = string as NSString
+        let selection = selectedRange()
+        let lineStart = ns.lineRange(for: NSRange(location: selection.location, length: 0)).location
+        let indent = ns.substring(with: NSRange(location: lineStart, length: selection.location - lineStart)).prefix { $0 == " " || $0 == "\t" }
+        var (text, cursor) = item.expanded(indent: String(indent))
+        // At the start of a line that already has code, give the new item its own line.
+        let lineEnd = NSMaxRange(ns.lineRange(for: NSRange(location: selection.location, length: 0)))
+        let after = ns.substring(with: NSRange(location: NSMaxRange(selection), length: max(lineEnd - NSMaxRange(selection), 0)))
+        if indent.count == selection.location - lineStart, !after.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            text += "\n" + indent
+        }
+        insertText(text, replacementRange: selection)
+        setSelectedRange(NSRange(location: selection.location + cursor, length: 0))
+        window?.makeFirstResponder(self)
+    }
+
     @objc func indentSelection(_ sender: Any?) {
         transformLines { lines in lines.map { $0.isEmpty ? $0 : indentUnit + $0 } }
     }

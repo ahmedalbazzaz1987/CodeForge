@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import CodeForgeKit
 
 /// Debug builds only: renders the window to a PNG and quits, for checking layouts without a screen.
 ///   CF_SNAPSHOT=/path/out.png  where to write the image (required)
@@ -26,6 +27,18 @@ enum DevSnapshot {
                       let document = controller.documentForProbe(textView) else { return }
                 document.reveal(line: line, column: nil)
                 controller.toggleBreakpointAtCursor(nil)
+            }
+        }
+        if let name = env["CF_TOOLBOX"] {
+            // Insert a Toolbox item (by name) at the end of the first <body> line, like a double-click.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                guard let textView = find(controller.window!.contentView!, CodeTextView.self),
+                      let document = controller.documentForProbe(textView),
+                      let item = ToolboxCatalog.groups(forLanguage: document.language.id).flatMap(\.items).first(where: { $0.name == name }) else { return }
+                let ns = textView.string as NSString
+                let body = ns.range(of: "<body>")
+                textView.setSelectedRange(NSRange(location: NSMaxRange(ns.lineRange(for: body)) , length: 0))
+                textView.insertSnippet(item)
             }
         }
         if let action = env["CF_ACTION"] {

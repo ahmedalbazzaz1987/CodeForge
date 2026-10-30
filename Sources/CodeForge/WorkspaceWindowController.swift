@@ -26,6 +26,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private let explorer = FileTreeView()
     private lazy var sidebar = SidebarView(explorer: explorer)
     private var git: GitChangesView { sidebar.git }
+    private let toolbox = ToolboxView()
+    private let properties = PropertiesView()
+    /// Solution Explorer / Git Changes above the Properties window, like Visual Studio's right-hand column.
+    private let explorerPane = NSSplitView()
+    private var designHosts: [ObjectIdentifier: DesignHost] = [:]
+    private var pendingPropertiesUpdate: DispatchWorkItem?
     private let branchButton = NSButton()
     private let tabBar = TabBarView()
     private let editorHost = NSView()
@@ -113,6 +119,13 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         innerSplit.addArrangedSubview(panel)
         innerSplit.setHoldingPriority(.init(260), forSubviewAt: 1)
 
+        explorerPane.isVertical = false
+        explorerPane.dividerStyle = .thin
+        explorerPane.delegate = self
+        explorerPane.addArrangedSubview(sidebar)
+        explorerPane.addArrangedSubview(properties)
+        explorerPane.setHoldingPriority(.init(260), forSubviewAt: 1)
+
         outerSplit.isVertical = true
         outerSplit.dividerStyle = .thin
         outerSplit.delegate = self
@@ -176,25 +189,36 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             status.heightAnchor.constraint(equalToConstant: 22),
         ])
         window?.contentView = root
-        sidebar.isHidden = defaults.bool(forKey: "explorerHidden")
+        explorerPane.isHidden = defaults.bool(forKey: "explorerHidden")
+        toolbox.isHidden = defaults.bool(forKey: "toolboxHidden")
+        properties.isHidden = defaults.bool(forKey: "propertiesHidden")
         panel.isHidden = defaults.bool(forKey: "consoleHidden")
     }
 
     private var explorerOnRight: Bool { defaults.object(forKey: "explorerOnRight") as? Bool ?? true }
 
-    /// Puts the explorer on the right (like Visual Studio's Solution Explorer) or the left.
+    /// [Toolbox | editor | Solution Explorer + Properties], like Visual Studio; mirrored when the explorer is on the left.
     private func arrangeExplorer() {
         outerSplit.arrangedSubviews.forEach { outerSplit.removeArrangedSubview($0); $0.removeFromSuperview() }
-        let views: [NSView] = explorerOnRight ? [innerSplit, sidebar] : [sidebar, innerSplit]
+        let views: [NSView] = explorerOnRight ? [toolbox, innerSplit, explorerPane] : [explorerPane, innerSplit, toolbox]
         views.forEach(outerSplit.addArrangedSubview)
-        outerSplit.setHoldingPriority(.init(250), forSubviewAt: explorerOnRight ? 0 : 1)
-        outerSplit.setHoldingPriority(.init(260), forSubviewAt: explorerOnRight ? 1 : 0)
+        for (index, view) in views.enumerated() {
+            outerSplit.setHoldingPriority(view === innerSplit ? .init(250) : .init(260), forSubviewAt: index)
+        }
+    }
+
+    /// Sets a side pane's width: the first divider for the left pane, the second for the right one.
+    private func place(_ pane: NSView, width: Double) {
+        guard !pane.isHidden, let index = outerSplit.arrangedSubviews.firstIndex(of: pane) else { return }
+        if index == 0 {
+            outerSplit.setPosition(width, ofDividerAt: 0)
+        } else {
+            outerSplit.setPosition(outerSplit.bounds.width - width, ofDividerAt: 1)
+        }
     }
 
     private func placeExplorerDivider() {
-        guard !sidebar.isHidden else { return }
-        let width = defaults.double(forKey: "explorerWidth").clamped(150, 500, default: 260)
-        outerSplit.setPosition(explorerOnRight ? outerSplit.bounds.width - width : width, ofDividerAt: 0)
+        place(explorerPane, width: defaults.double(forKey: "explorerWidth").clamped(150, 500, default: 270))
     }
 
     override func showWindow(_ sender: Any?) {
@@ -208,23 +232,34 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private func placeDividers() {
         // Read before moving anything: each move saves the sizes it produces.
         let panelHeight = defaults.double(forKey: "consoleHeight").clamped(80, 800, default: 220)
-        placeExplorerDivider()
+        let explorerWidth = defaults.double(forKey: "explorerWidth").clamped(150, 500, default: 270)
+        let toolboxWidth = defaults.double(forKey: "toolboxWidth").clamped(150, 400, default: 210)
+        let propertiesHeight = defaults.double(forKey: "propertiesHeight").clamped(120, 700, default: 260)
+        place(toolbox, width: toolboxWidth)
+        place(explorerPane, width: explorerWidth)
         if !panel.isHidden { innerSplit.setPosition(innerSplit.bounds.height - panelHeight, ofDividerAt: 0) }
+        if !properties.isHidden { explorerPane.setPosition(explorerPane.bounds.height - propertiesHeight, ofDividerAt: 0) }
     }
 
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
         guard splitView === outerSplit else { return max(proposed, 120) }
-        return explorerOnRight ? splitView.bounds.width - 500 : 150
+        let views = splitView.arrangedSubviews
+        if index == 0 { return views[0].isHidden ? proposed : 150 }
+        return views[2].isHidden ? proposed : splitView.bounds.width - 500
     }
 
     func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
         guard splitView === outerSplit else { return splitView.bounds.height - 80 }
-        return explorerOnRight ? splitView.bounds.width - 150 : min(500, splitView.bounds.width - 300)
+        let views = splitView.arrangedSubviews
+        if index == 0 { return views[0].isHidden ? proposed : 450 }
+        return views[2].isHidden ? proposed : splitView.bounds.width - 150
     }
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard didPlaceDividers else { return }
-        if !sidebar.isHidden { defaults.set(Double(sidebar.frame.width), forKey: "explorerWidth") }
+        if !toolbox.isHidden { defaults.set(Double(toolbox.frame.width), forKey: "toolboxWidth") }
+        if !properties.isHidden, !explorerPane.isHidden { defaults.set(Double(properties.frame.height), forKey: "propertiesHeight") }
+        if !explorerPane.isHidden { defaults.set(Double(explorerPane.frame.width), forKey: "explorerWidth") }
         if !panel.isHidden { defaults.set(Double(panel.frame.height), forKey: "consoleHeight") }
     }
 
@@ -334,6 +369,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         git.onShowText = { [weak self] title, text, language in self?.openReadOnly(title: title, text: text, languageId: language) }
         git.onMessage = { [weak self] in self?.runStatus.stringValue = $0 }
         git.onStatusChange = { [weak self] status in self?.updateBranchButton(status) }
+        toolbox.onInsert = { [weak self] item in
+            guard let self, let current, current.textView.isEditable else { return NSSound.beep() }
+            if let host = designHosts[ObjectIdentifier(current)], host.mode == .design { host.setMode(.split) }
+            current.textView.insertSnippet(item)
+        }
+        properties.onChangeAttribute = { [weak self] index, name, value in self?.changeAttribute(index, name: name, value: value) }
         startPage.onOpenRecent = { [weak self] in self?.open($0) }
         startPage.onNewProject = { [weak self] in self?.newProject(nil) }
         startPage.onOpen = { [weak self] in self?.openDocument(nil) }
@@ -386,7 +427,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         git.folder = url
         if let url {
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
-            if sidebar.isHidden { toggleExplorer(nil) }
+            if explorerPane.isHidden { toggleExplorer(nil) }
         }
         refreshChrome()
         saveSession()
@@ -417,7 +458,14 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         attachLanguageServer(document)
         document.onSelectionChange = { [weak self, weak document] in
-            if document === self?.current { self?.updateCursorStatus() }
+            if document === self?.current {
+                self?.updateCursorStatus()
+                self?.schedulePropertiesUpdate()
+            }
+        }
+        document.onTextChange = { [weak self, weak document] in
+            guard let self, let document else { return }
+            designHosts[ObjectIdentifier(document)]?.textChanged()
         }
         return document
     }
@@ -426,7 +474,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         selectedIndex = documents.indices.contains(index) ? index : -1
         editorHost.subviews.forEach { $0.removeFromSuperview() }
         if current == nil { startPage.reload() }
-        let content: NSView = current?.scrollView ?? startPage
+        let content: NSView = current.map { contentView(for: $0) } ?? startPage
         content.translatesAutoresizingMaskIntoConstraints = false
         editorHost.addSubview(content)
         NSLayoutConstraint.activate([
@@ -439,7 +487,99 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             window?.makeFirstResponder(current.textView)
             if let url = current.url { explorer.select(url) }
         }
+        toolbox.show(language: current?.language)
+        updateProperties()
         refreshChrome()
+    }
+
+    /// HTML pages get the Design / Split / Source views; everything else is just the editor.
+    private func contentView(for document: EditorDocument) -> NSView {
+        guard document.language.id == "html", document.url.map({ ["html", "htm", "xhtml"].contains($0.pathExtension.lowercased()) }) ?? true else {
+            if let host = designHosts.removeValue(forKey: ObjectIdentifier(document)) {
+                document.scrollView.removeFromSuperview()
+                host.removeFromSuperview()
+            }
+            return document.scrollView
+        }
+        if let host = designHosts[ObjectIdentifier(document)] { return host }
+        let host = DesignHost(document: document)
+        host.onSelectElement = { [weak self, weak document] tag, index in
+            guard let document else { return }
+            self?.selectElement(tag, index: index, in: document)
+        }
+        designHosts[ObjectIdentifier(document)] = host
+        return host
+    }
+
+    /// Clicking an element in the design view puts the cursor in its tag (index = its place among tags with that name).
+    private func selectElement(_ tag: String, index: Int, in document: EditorDocument) {
+        let text = document.textView.string as NSString
+        guard index >= 0, let regex = try? NSRegularExpression(pattern: "<" + NSRegularExpression.escapedPattern(for: tag) + #"(?=[\s/>])"#, options: .caseInsensitive) else { return }
+        let matches = regex.matches(in: text as String, range: NSRange(location: 0, length: text.length))
+        guard matches.indices.contains(index) else { return }
+        let location = matches[index].range.location + 1
+        document.textView.setSelectedRange(NSRange(location: location, length: 0))
+        document.textView.scrollRangeToVisible(document.textView.selectedRange())
+        updateProperties()
+    }
+
+    // MARK: Toolbox and Properties
+
+    private func schedulePropertiesUpdate() {
+        pendingPropertiesUpdate?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.updateProperties() }
+        pendingPropertiesUpdate = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    /// The element at the cursor in HTML and Razor files; otherwise the file's details.
+    private func updateProperties() {
+        guard !properties.isHidden else { return }
+        guard let current else { return properties.showNothing() }
+        if ["html", "razor"].contains(current.language.id),
+           let tag = HTMLTag.at(current.textView.selectedRange().location, in: current.textView.string) {
+            properties.show(tag: tag)
+        } else {
+            properties.show(file: current)
+        }
+    }
+
+    /// Rewrites the tag at the cursor after a change in the Properties window (one undoable edit).
+    private func changeAttribute(_ index: Int, name: String?, value: String?) {
+        guard let current, let textView = Optional(current.textView),
+              var tag = HTMLTag.at(textView.selectedRange().location, in: textView.string) else { return }
+        if index >= tag.attributes.count {
+            guard let name else { return }
+            tag.attributes.append((name, value ?? ""))
+        } else if let name {
+            tag.attributes[index] = (name, value)
+        } else {
+            tag.attributes.remove(at: index)
+        }
+        let replacement = tag.source
+        guard textView.shouldChangeText(in: tag.range, replacementString: replacement) else { return }
+        textView.textStorage?.replaceCharacters(in: tag.range, with: replacement)
+        textView.didChangeText()
+        textView.setSelectedRange(NSRange(location: tag.range.location + 1, length: 0))
+        updateProperties()
+    }
+
+    @objc func toggleToolbox(_ sender: Any?) {
+        toolbox.isHidden.toggle()
+        defaults.set(toolbox.isHidden, forKey: "toolboxHidden")
+        outerSplit.adjustSubviews()
+        place(toolbox, width: defaults.double(forKey: "toolboxWidth").clamped(150, 400, default: 210))
+    }
+
+    @objc func toggleProperties(_ sender: Any?) {
+        properties.isHidden.toggle()
+        defaults.set(properties.isHidden, forKey: "propertiesHidden")
+        explorerPane.adjustSubviews()
+        if !properties.isHidden {
+            let height = defaults.double(forKey: "propertiesHeight").clamped(120, 700, default: 260)
+            explorerPane.setPosition(explorerPane.bounds.height - height, ofDividerAt: 0)
+            updateProperties()
+        }
     }
 
     private var triedSessions = Set<ObjectIdentifier>()
@@ -723,8 +863,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     // MARK: View menu
 
     @objc func toggleExplorer(_ sender: Any?) {
-        sidebar.isHidden.toggle()
-        defaults.set(sidebar.isHidden, forKey: "explorerHidden")
+        explorerPane.isHidden.toggle()
+        defaults.set(explorerPane.isHidden, forKey: "explorerHidden")
         outerSplit.adjustSubviews()
         placeExplorerDivider()
     }
@@ -1174,7 +1314,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     // MARK: Git and CodeLens
 
     @objc func showGitChanges(_ sender: Any?) {
-        if sidebar.isHidden { toggleExplorer(nil) }
+        if explorerPane.isHidden { toggleExplorer(nil) }
         sidebar.show(1)
     }
 
@@ -1290,10 +1430,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleExplorer(_:)) { menuItem.title = sidebar.isHidden ? "Show Explorer" : "Hide Explorer" }
+        if menuItem.action == #selector(toggleExplorer(_:)) { menuItem.title = explorerPane.isHidden ? "Show Explorer" : "Hide Explorer" }
         if menuItem.action == #selector(toggleConsole(_:)) { menuItem.title = panel.isHidden ? "Show Panel" : "Hide Panel" }
         if menuItem.action == #selector(startDebugging(_:)) { menuItem.title = debugSession?.state == .paused ? "Continue" : "Start Debugging" }
         if menuItem.action == #selector(toggleCodeLens(_:)) { menuItem.state = showsCodeLens ? .on : .off }
+        if menuItem.action == #selector(toggleToolbox(_:)) { menuItem.title = toolbox.isHidden ? "Show Toolbox" : "Hide Toolbox" }
+        if menuItem.action == #selector(toggleProperties(_:)) { menuItem.title = properties.isHidden ? "Show Properties Window" : "Hide Properties Window" }
         if menuItem.action == #selector(toggleExplorerSide(_:)) { menuItem.title = explorerOnRight ? "Move Explorer to Left" : "Move Explorer to Right" }
         return isEnabled(menuItem.action)
     }

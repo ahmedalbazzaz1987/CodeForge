@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+The Toolbox, a web designer and the Properties window, arranged like Visual Studio.
+
+- **Toolbox** (left, ⌥⌘X): controls and snippets for the current file. HTML controls (Button, Text Box, Check Box, Drop-Down List, Table, Form…), Bootstrap components, ASP.NET Tag Helpers for Razor pages, C# and VB.NET code snippets, SwiftUI controls, and Python, JavaScript and CSS snippets. Double-click an item to insert it at the cursor, or drag it into the editor. Search to filter.
+- **Design / Split / Source** views for HTML pages (tabs under the editor). The design surface shows the page live as you type; click an element there to select its tag in the source.
+- **Properties window** (under Solution Explorer, F4): the attributes of the HTML or Razor element at the cursor, editable in place, with + and − to add or remove attributes. For other files it shows the file's details.
+
 ## 0.7.0
 
 .NET: VB.NET, C# and ASP.NET Core.

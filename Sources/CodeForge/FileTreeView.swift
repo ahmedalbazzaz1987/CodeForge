@@ -108,7 +108,7 @@ final class FileTreeView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    static func iconButton(_ symbol: String, _ tip: String, _ action: Selector, _ target: AnyObject) -> NSButton {
+    static func iconButton(_ symbol: String, _ tip: String, _ action: Selector, _ target: AnyObject?) -> NSButton {
         let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip)!, target: target, action: action)
         button.isBordered = false
         button.toolTip = tip

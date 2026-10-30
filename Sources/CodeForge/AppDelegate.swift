@@ -140,6 +140,8 @@ enum MainMenu {
         main.addSubmenu("View") { menu in
             menu.add("Hide Explorer", #selector(WorkspaceWindowController.toggleExplorer(_:)), "b")
             menu.add("Move Explorer to Left", #selector(WorkspaceWindowController.toggleExplorerSide(_:)))
+            menu.add("Hide Toolbox", #selector(WorkspaceWindowController.toggleToolbox(_:)), "x", [.command, .option])
+            menu.add("Hide Properties Window", #selector(WorkspaceWindowController.toggleProperties(_:)), MainMenu.functionKey(NSF4FunctionKey), [])
             menu.add("Hide Panel", #selector(WorkspaceWindowController.toggleConsole(_:)), "y", [.command, .shift])
             menu.add("Output", #selector(WorkspaceWindowController.showOutput(_:)), "u", [.command, .shift])
             menu.add("Error List", #selector(WorkspaceWindowController.showErrorList(_:)), "m", [.command, .shift])
