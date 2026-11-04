@@ -15,7 +15,7 @@ final class StartPage: NSView {
         let title = NSTextField(labelWithString: "CodeForge")
         title.font = .systemFont(ofSize: 30, weight: .light)
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        let subtitle = NSTextField(labelWithString: version.map { "Version \($0)" } ?? "Development build")
+        let subtitle = NSTextField(labelWithString: (version.map { "Version \($0)" } ?? "Development build") + "  ·  by Ahmed Al-Bazzaz")
         subtitle.textColor = .secondaryLabelColor
 
         let recentTitle = Self.heading("Open recent")

@@ -26,14 +26,8 @@ Bump `VERSION`, add a `## <version>` section to `CHANGELOG.md`, commit and push,
 universal build, zip + SHA-256, tag, GitHub release). Installed copies update themselves from GitHub Releases. The
 macOS release is built on a Mac.
 
-## Windows version (planned)
+## Windows version
 
-The owner wants a Windows version, worked on from a Windows PC. Starting points:
-
-- Reuse `CodeForgeKit` as is: it builds with Swift on Windows (Foundation + SQLite3). Check `swift build --target
-  CodeForgeKit` and `swift test` there first; path handling (`/` vs `\`), shell commands (`/bin/zsh`, `open`) and
-  tool paths (`/opt/homebrew/...`) in callers will need Windows equivalents.
-- The UI must be rewritten: AppKit doesn't exist on Windows. One proven route is a Swift engine behind a small C API
-  with a .NET (Avalonia or WinUI) Windows app on top, built in Windows CI with Swift 6.4 or later. On Windows, Visual Studio's own features (WinForms/WPF designers, .NET debugging with vsdbg) are
-  available, unlike on the Mac.
-- Keep the macOS app working; put Windows code in its own folder and target.
+The Windows version lives in its own repository, ahmedalbazzaz1987/CodeForge-Windows (C#, WPF, .NET 10), with its own
+CLAUDE.md. New features usually go to both. .NET debugging uses netcoredbg on both: Microsoft's vsdbg is licensed only
+for Microsoft's own tools, on Windows too.

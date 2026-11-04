@@ -10,8 +10,8 @@ Releases.
 - **Native and light.** Written in Swift with AppKit. It starts instantly and runs on Apple Silicon and Intel Macs
   with macOS 14 or later.
 - **Visual Studio-style layout.** Toolbox and Server Explorer on the left, Solution Explorer, Git Changes and Class View
-  on the right, a docked bottom panel and a colored status bar. Color themes: Light, Dark, Blue, High Contrast, Monokai,
-  Dracula and Solarized. The toolbar can be customized (View ▸ Toolbars ▸ Customize…).
+  on the right, a docked bottom panel and a colored status bar. Color themes: Modern Light, Modern Dark, Gray, Midnight,
+  Visual Studio Light and Dark, Blue, High Contrast, Monokai, Dracula and Solarized. The toolbar can be customized (View ▸ Toolbars ▸ Customize…).
 - **Start fast.** File ▸ New Project… creates a ready-to-run project for Python, C, C++, Swift, Node.js, TypeScript,
   web pages, Go, Rust or Java. You can also clone a Git repository straight from the Start page.
 - **Toolbox, designer and Properties.** A Visual Studio-style Toolbox with HTML controls, Bootstrap components, ASP.NET
@@ -21,6 +21,8 @@ Releases.
   Run All Tests, Tools ▸ Options and the Code Snippets Manager.
 - **Find and Replace in Files** (⇧⌘F / ⇧⌘H) across the whole project, with match case, whole word, regular expressions
   and file types, and results in a Find Results tab.
+- **Task List, bookmarks and navigation.** All the TODO comments in the project (⌥⌘T), bookmarks that follow their code
+  (⌃⌘K), and Navigate Backward/Forward (⌃- / ⌃⇧-).
 - **Refactoring.** Quick Actions and Refactorings (⌥↩), Rename (F2) and Extract Method (⌥⌘M), for every language with a
   language server and, built in, for VB.NET, C#, Python, JavaScript, TypeScript and Swift.
 - **Class View and Object Browser.** The project's namespaces, classes and members (⇧⌘C), and an Object Browser (⌥⌘J)
@@ -97,6 +99,9 @@ open dist/CodeForge.app
 | Class View / Object Browser / Server Explorer | ⇧⌘C / ⌥⌘J / ⌃⌘S |
 | Execute SQL query / Code Snippets Manager | ⇧⌘E / ⌃⌘B |
 | Expand a code snippet | type its shortcut, then Tab |
+| Task List | ⌥⌘T |
+| Toggle / next / previous bookmark | ⌃⌘K / ⌃⌘N / ⌃⌘P |
+| Navigate Backward / Forward | ⌃- / ⌃⇧- |
 | Go to line | ⌘L |
 | Toggle comment / indent / outdent | ⌘/ / ⌘] / ⌘[ |
 | Show completions | ⌃Space or Esc |

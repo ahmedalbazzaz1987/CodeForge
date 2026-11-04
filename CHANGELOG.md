@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.11.0
+
+A modern look, and more of Visual Studio's everyday tools. By Ahmed Al-Bazzaz.
+
+- **New color themes** in Tools ▸ Options: **Modern Light** and **Modern Dark** (the new defaults, with calm neutrals, an
+  indigo accent and softer syntax colors), **Gray** (a second dark option in neutral graphite with a teal accent) and
+  **Midnight** (deep navy). Visual Studio's own colors are still there as **Visual Studio Light** and **Visual Studio Dark**.
+- **Task List** (⌥⌘T): every TODO, FIXME, HACK, UNDONE, BUG and XXX comment in the project. Only real comments count,
+  not the same words in code or strings. Double-click to go there.
+- **Bookmarks** (Edit ▸ Bookmarks): Toggle (⌃⌘K), Next (⌃⌘N), Previous (⌃⌘P) and Clear All. A bar in the margin marks each
+  one; they stay on their code as you edit, and are remembered between launches.
+- **Breakpoints follow their code** too when lines are added or removed above them.
+- **Navigate Backward and Forward** (⌃- and ⌃⇧-, with toolbar buttons), like a browser's history, after Go to Definition,
+  search results, bookmarks and switching tabs.
+- The app, its About panel, the Start Page and the license now credit **Ahmed Al-Bazzaz**.
+
 ## 0.10.0
 
 Closer to Visual Studio Professional: refactoring, Find in Files, Class View, Object Browser, Server Explorer, code
