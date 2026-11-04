@@ -6,6 +6,8 @@ final class LineNumberRuler: NSRulerView {
     private var lineStarts: [Int] = [0]
     /// 1-based lines with breakpoints.
     var breakpoints: Set<Int> = [] { didSet { needsDisplay = true } }
+    /// 1-based bookmarked lines (Edit ▸ Bookmarks), shown as a bar beside the line number.
+    var bookmarks: Set<Int> = [] { didSet { needsDisplay = true } }
     /// 1-based line where the debugger is paused.
     var executionLine: Int? { didSet { needsDisplay = true } }
     var onToggleBreakpoint: ((Int) -> Void)?
@@ -99,6 +101,11 @@ final class LineNumberRuler: NSRulerView {
             if breakpoints.contains(index + 1) {
                 Theme.errorRed.setFill()
                 NSBezierPath(ovalIn: marker).fill()
+            }
+            if bookmarks.contains(index + 1) {
+                Theme.accent.setFill()
+                let bar = convert(lineRect, from: textView)
+                NSBezierPath(roundedRect: NSRect(x: ruleThickness - 6, y: bar.minY + 1, width: 3, height: bar.height - 2), xRadius: 1.5, yRadius: 1.5).fill()
             }
             if executionLine == index + 1 {
                 let arrow = NSBezierPath()

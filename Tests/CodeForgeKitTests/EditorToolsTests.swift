@@ -291,7 +291,9 @@ final class SnippetAndThemeTests: XCTestCase {
         XCTAssertEqual(ColorThemes.theme(id: "monokai")?.isDark, true)
         XCTAssertNil(ColorThemes.theme(id: "system"))
         XCTAssertEqual(Set(ColorThemes.all.map(\.id)).count, ColorThemes.all.count)
-        XCTAssertEqual(ColorThemes.light.color(for: .keyword), 0x0000FF)
+        XCTAssertEqual(ColorThemes.visualStudioLight.color(for: .keyword), 0x0000FF)
+        XCTAssertEqual(ColorThemes.theme(id: "gray")?.isDark, true)
+        XCTAssertEqual(ColorThemes.theme(id: "midnight")?.name, "Midnight")
     }
 }
 
@@ -326,5 +328,48 @@ final class DatabaseTests: XCTestCase {
         let command = DatabaseClient.command(for: DataConnection(name: "x", kind: .postgres, location: "localhost", port: "5432", database: "shop", user: "me"), sql: "SELECT 1")!
         XCTAssertEqual(command.executable, "psql")
         XCTAssertEqual(command.arguments, ["-X", "--csv", "-v", "ON_ERROR_STOP=1", "-h", "localhost", "-p", "5432", "-U", "me", "-d", "shop", "-c", "SELECT 1"])
+    }
+}
+
+final class NavigationTests: XCTestCase {
+    func testTaskListFindsOnlyComments() {
+        let code = "' TODO: check the total\nDim note = \"TODO not this one\"\nDim x = 1 ' HACK works for now\n"
+        let tasks = TaskScanner.tasks(in: code, url: URL(fileURLWithPath: "/a.vb"), language: Languages.language(id: "vb")!)
+        XCTAssertEqual(tasks.map(\.token), ["TODO", "HACK"])
+        XCTAssertEqual(tasks[0].text, "check the total")
+        XCTAssertEqual(tasks[1].line, 3)
+        XCTAssertEqual(tasks[1].column, 13)
+        let block = TaskScanner.tasks(in: "/* FIXME: leak */", url: URL(fileURLWithPath: "/a.c"), language: Languages.language(id: "c")!)
+        XCTAssertEqual(block.first?.text, "leak")
+    }
+
+    func testBookmarksFollowTheirLines() {
+        XCTAssertEqual(BookmarkLines.shift([2, 5, 9], editLine: 3, removed: 0, added: 2), [2, 7, 11])
+        XCTAssertEqual(BookmarkLines.shift([2, 5, 9], editLine: 3, removed: 3, added: 0), [2, 3, 6])
+        XCTAssertEqual(BookmarkLines.shift([4], editLine: 4, removed: 0, added: 1), [4])
+    }
+
+    func testBookmarkOrderWraps() throws {
+        let marks = ["/a": Set([3, 9]), "/b": Set([1])]
+        XCTAssertEqual(try XCTUnwrap(BookmarkLines.next(after: ("/a", 3), in: marks, backward: false)).line, 9)
+        XCTAssertEqual(try XCTUnwrap(BookmarkLines.next(after: ("/a", 9), in: marks, backward: false)).path, "/b")
+        XCTAssertEqual(try XCTUnwrap(BookmarkLines.next(after: ("/b", 1), in: marks, backward: false)).line, 3)   // wraps around
+        XCTAssertEqual(try XCTUnwrap(BookmarkLines.next(after: ("/a", 3), in: marks, backward: true)).path, "/b")
+        XCTAssertNil(BookmarkLines.next(after: ("/a", 1), in: [:], backward: false))
+    }
+
+    func testNavigationHistoryWorksLikeABrowser() {
+        var history = NavigationHistory<String>()
+        history.record("a")
+        history.record("b")
+        XCTAssertEqual(history.goBack(from: "c"), "b")
+        XCTAssertEqual(history.goBack(from: "b"), "a")
+        XCTAssertNil(history.goBack(from: "a"))
+        XCTAssertEqual(history.goForward(from: "a"), "b")
+        XCTAssertEqual(history.goForward(from: "b"), "c")
+        XCTAssertNil(history.goForward(from: "c"))
+        _ = history.goBack(from: "c")
+        history.record("z")     // a new jump clears Forward
+        XCTAssertNil(history.goForward(from: "z"))
     }
 }

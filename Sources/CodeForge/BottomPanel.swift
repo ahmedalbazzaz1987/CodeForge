@@ -4,12 +4,13 @@ import CodeForgeKit
 /// The docked panel under the editor: Output, Error List and Terminal tabs.
 final class BottomPanel: NSView {
     enum Tab: Int, CaseIterable {
-        case output, errors, references, findResults, queryResults, debug, terminal
-        var title: String { ["Output", "Error List", "References", "Find Results", "Query Results", "Debug", "Terminal"][rawValue] }
+        case output, errors, taskList, references, findResults, queryResults, debug, terminal
+        var title: String { ["Output", "Error List", "Task List", "References", "Find Results", "Query Results", "Debug", "Terminal"][rawValue] }
     }
 
     let output = ConsoleView()
     let errors = ErrorListView()
+    let taskList = ReferencesView(placeholder: "Comments with TODO, FIXME, HACK, UNDONE, BUG or XXX in the project are listed here.")
     let references = ReferencesView()
     let findResults = ReferencesView(placeholder: "Use Find in Files (⇧⌘F) to search the whole project.")
     let queryResults = QueryResultsView()
@@ -57,7 +58,7 @@ final class BottomPanel: NSView {
     func show(_ tab: Tab) {
         selected = tab
         content.subviews.forEach { $0.removeFromSuperview() }
-        let view: NSView = [output, errors, references, findResults, queryResults, debug, terminal][tab.rawValue]
+        let view: NSView = [output, errors, taskList, references, findResults, queryResults, debug, terminal][tab.rawValue]
         view.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(view)
         NSLayoutConstraint.activate([
@@ -76,6 +77,7 @@ final class BottomPanel: NSView {
             let tab = Tab(rawValue: button.tag)!
             var title = tab.title
             if tab == .errors, errors.count > 0 { title += "  \(errors.count)" }
+            if tab == .taskList, taskList.count > 0 { title += "  \(taskList.count)" }
             if tab == .references, references.count > 0 { title += "  \(references.count)" }
             if tab == .findResults, findResults.count > 0 { title += "  \(findResults.count)" }
             button.attributedTitle = NSAttributedString(string: title, attributes: [
@@ -92,6 +94,7 @@ final class BottomPanel: NSView {
         switch selected {
         case .output: output.clear(nil)
         case .errors: errors.set([], folder: nil)
+        case .taskList: taskList.set(summary: nil, matches: [])
         case .references: references.set(title: "", [])
         case .findResults: findResults.set(summary: nil, matches: [])
         case .queryResults: queryResults.clear()

@@ -22,6 +22,9 @@ private extension NSToolbarItem.Identifier {
     static let addItem = Self("addItem")
     static let quickActions = Self("quickActions")
     static let objectBrowser = Self("objectBrowser")
+    static let navigateBack = Self("navigateBack")
+    static let navigateForward = Self("navigateForward")
+    static let taskList = Self("taskList")
 }
 
 /// The main window: editor tabs, explorer, bottom panel (Output, Error List, Terminal) and status bar.
@@ -81,6 +84,15 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private var debugBarHeight: NSLayoutConstraint!
     /// Breakpoint lines (1-based) per file path; saved between launches.
     private var breakpoints: [String: Set<Int>] = [:]
+    /// Bookmarked lines (1-based) per file path; saved between launches.
+    private var bookmarks: [String: Set<Int>] = [:]
+    /// Where you've been, for Navigate Backward and Forward.
+    private var history = NavigationHistory<Place>()
+    private var isNavigatingHistory = false
+    private struct Place: Equatable {
+        let path: String
+        let line: Int
+    }
     private var untitledCount = 0
     private var isRunning = false
     private var runFolder: URL?
@@ -309,14 +321,14 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.newProject, .open, .saveAll, .flexibleSpace, .configuration, .start, .debug, .stop, .flexibleSpace, .panel, .files]
+        [.newProject, .open, .saveAll, .navigateBack, .navigateForward, .flexibleSpace, .configuration, .start, .debug, .stop, .flexibleSpace, .panel, .files]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         // Each item once, then the extras; spaces can be added any number of times.
         var seen = Set<NSToolbarItem.Identifier>()
         return (toolbarDefaultItemIdentifiers(toolbar) + [.build, .runTests, .findInFiles, .quickActions, .comment, .addItem, .gitChanges,
-                                                          .toolbox, .serverExplorer, .classView, .objectBrowser, .space])
+                                                          .toolbox, .serverExplorer, .classView, .objectBrowser, .taskList, .space])
             .filter { seen.insert($0).inserted }
     }
 
@@ -358,6 +370,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             .serverExplorer: ("Server Explorer", "cylinder.split.1x2", #selector(showServerExplorer(_:))),
             .classView: ("Class View", "list.bullet.indent", #selector(showClassView(_:))),
             .objectBrowser: ("Object Browser", "books.vertical", #selector(showObjectBrowser(_:))),
+            .navigateBack: ("Navigate Backward", "chevron.backward", #selector(navigateBackward(_:))),
+            .navigateForward: ("Navigate Forward", "chevron.forward", #selector(navigateForward(_:))),
+            .taskList: ("Task List", "checklist", #selector(showTaskList(_:))),
         ]
         guard let (label, symbol, action) = specs[id] else { return nil }
         let item = NSToolbarItem(itemIdentifier: id)
@@ -374,7 +389,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     // MARK: Wiring
 
     private func connectCallbacks() {
-        tabBar.onSelect = { [weak self] in self?.select($0) }
+        tabBar.onSelect = { [weak self] in
+            self?.recordPlace()
+            self?.select($0)
+        }
         tabBar.onClose = { [weak self] in _ = self?.closeDocument(at: $0) }
         explorer.onOpenFile = { [weak self] in self?.open($0) }
         explorer.onOpenFolder = { [weak self] in self?.openDocument(nil) }
@@ -408,6 +426,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         panel.onHide = { [weak self] in self?.setConsoleVisible(false) }
         panel.references.onOpen = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
         panel.findResults.onOpen = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
+        panel.taskList.onOpen = { [weak self] url, line, column in self?.open(url, line: line, column: column) }
         intelliSense.document = { [weak self] textView in self?.documents.first { $0.textView === textView } }
         intelliSense.documents = { [weak self] in self?.documents ?? [] }
         intelliSense.projectFolder = { [weak self] in self?.workspaceURL }
@@ -497,6 +516,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     /// Opens a file and moves the cursor to a 1-based line (and column).
     func open(_ url: URL, line: Int, column: Int? = nil) {
+        recordPlace()
         open(url)
         guard let current, current.url?.standardizedFileURL == url.standardizedFileURL else { return }
         current.reveal(line: line, column: column)
@@ -547,7 +567,14 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         let document = EditorDocument(url: url, text: text, fontSize: fontSize, untitledName: name)
         document.textView.assistant = intelliSense
-        if let path = url?.standardizedFileURL.path { document.ruler.breakpoints = breakpoints[path] ?? [] }
+        if let path = url?.standardizedFileURL.path {
+            document.ruler.breakpoints = breakpoints[path] ?? []
+            document.ruler.bookmarks = bookmarks[path] ?? []
+        }
+        document.onLinesChange = { [weak self, weak document] line, removed, added in
+            guard let document else { return }
+            self?.linesChanged(in: document, line: line, removed: removed, added: added)
+        }
         document.ruler.onToggleBreakpoint = { [weak self, weak document] line in
             guard let document else { return }
             self?.toggleBreakpoint(in: document, line: line)
@@ -776,6 +803,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         do {
             try document.write()
             if let url = document.url { ProjectIndex.shared.update(url, text: document.textView.string) }
+            if panel.selected == .taskList { refreshTaskList() }
             git.refresh()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self, weak document] in
                 if let document { self?.updateCodeLens(document) }
@@ -913,6 +941,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     func restoreSession() {
         if let saved = defaults.dictionary(forKey: "breakpoints") as? [String: [Int]] {
             breakpoints = saved.mapValues(Set.init)
+        }
+        if let saved = defaults.dictionary(forKey: "bookmarks") as? [String: [Int]] {
+            bookmarks = saved.mapValues(Set.init)
         }
         // Read everything first: opening the folder saves the (still empty) session.
         let files = defaults.stringArray(forKey: "openFiles") ?? []
@@ -1580,6 +1611,107 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         defaults.set(breakpoints.mapValues { Array($0) }, forKey: "breakpoints")
     }
 
+    // MARK: Bookmarks, navigation and the Task List
+
+    /// Bookmarks and breakpoints stay on their code when lines are added or removed above them.
+    private func linesChanged(in document: EditorDocument, line: Int, removed: Int, added: Int) {
+        document.ruler.bookmarks = BookmarkLines.shift(document.ruler.bookmarks, editLine: line, removed: removed, added: added)
+        document.ruler.breakpoints = BookmarkLines.shift(document.ruler.breakpoints, editLine: line, removed: removed, added: added)
+        guard let url = document.url?.standardizedFileURL else { return }
+        bookmarks[url.path] = document.ruler.bookmarks.isEmpty ? nil : document.ruler.bookmarks
+        breakpoints[url.path] = document.ruler.breakpoints.isEmpty ? nil : document.ruler.breakpoints
+        saveBookmarks()
+        saveBreakpoints()
+    }
+
+    private func saveBookmarks() {
+        defaults.set(bookmarks.mapValues { Array($0) }, forKey: "bookmarks")
+    }
+
+    @objc func toggleBookmark(_ sender: Any?) {
+        guard let current, let url = current.url?.standardizedFileURL else { return NSSound.beep() }
+        var lines = current.ruler.bookmarks
+        let line = current.cursorPosition.line
+        if lines.contains(line) { lines.remove(line) } else { lines.insert(line) }
+        current.ruler.bookmarks = lines
+        bookmarks[url.path] = lines.isEmpty ? nil : lines
+        saveBookmarks()
+    }
+
+    @objc func nextBookmark(_ sender: Any?) { goToBookmark(backward: false) }
+    @objc func previousBookmark(_ sender: Any?) { goToBookmark(backward: true) }
+
+    private func goToBookmark(backward: Bool) {
+        let place = (path: current?.url?.standardizedFileURL.path ?? "", line: current?.cursorPosition.line ?? 0)
+        let existing = bookmarks.filter { FileManager.default.fileExists(atPath: $0.key) }
+        guard let target = BookmarkLines.next(after: place, in: existing, backward: backward) else {
+            runStatus.stringValue = "No bookmarks yet: toggle one with ⌃⌘K"
+            return NSSound.beep()
+        }
+        open(URL(fileURLWithPath: target.path), line: target.line)
+    }
+
+    @objc func clearBookmarks(_ sender: Any?) {
+        bookmarks = [:]
+        documents.forEach { $0.ruler.bookmarks = [] }
+        saveBookmarks()
+    }
+
+    private var currentPlace: Place? {
+        guard let current, let url = current.url?.standardizedFileURL else { return nil }
+        return Place(path: url.path, line: current.cursorPosition.line)
+    }
+
+    /// Remembers where the cursor is before a jump to somewhere else.
+    private func recordPlace() {
+        guard !isNavigatingHistory, let currentPlace else { return }
+        history.record(currentPlace)
+    }
+
+    private func go(to place: Place) {
+        isNavigatingHistory = true
+        open(URL(fileURLWithPath: place.path), line: place.line)
+        isNavigatingHistory = false
+    }
+
+    @objc func navigateBackward(_ sender: Any?) {
+        guard let from = currentPlace ?? history.back.last, let place = history.goBack(from: from) else { return NSSound.beep() }
+        go(to: place)
+    }
+
+    @objc func navigateForward(_ sender: Any?) {
+        guard let from = currentPlace, let place = history.goForward(from: from) else { return NSSound.beep() }
+        go(to: place)
+    }
+
+    @objc func showTaskList(_ sender: Any?) {
+        showPanelTab(.taskList)
+        refreshTaskList()
+    }
+
+    /// Scans the project (or just the open files) for TODO comments in the background.
+    private func refreshTaskList() {
+        let folder = workspaceURL
+        let open = documents.compactMap { document in document.url.map { ($0, document.textView.string, document.language) } }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var tasks = folder.map { TaskScanner.tasks(in: $0) } ?? []
+            // Open files count with their current, possibly unsaved, text.
+            for (url, text, language) in open {
+                tasks.removeAll { $0.url.standardizedFileURL == url.standardizedFileURL }
+                tasks += TaskScanner.tasks(in: text, url: url, language: language)
+            }
+            tasks.sort { ($0.url.path, $0.line) < ($1.url.path, $1.line) }
+            let matches = tasks.map { SearchMatch(url: $0.url, line: $0.line, column: 1, length: ($0.token as NSString).length, preview: $0.text.isEmpty ? $0.token : "\($0.token): \($0.text)") }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let files = Set(tasks.map(\.url)).count
+                self.panel.taskList.set(summary: tasks.isEmpty ? "No TODO, FIXME, HACK, UNDONE, BUG or XXX comments found."
+                    : "\(tasks.count) task\(tasks.count == 1 ? "" : "s") in \(files) file\(files == 1 ? "" : "s")", matches: matches)
+                self.panel.updateTabTitles()
+            }
+        }
+    }
+
     // MARK: Find, refactoring and tool windows
 
     private var selectedText: String? {
@@ -1799,6 +1931,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         case #selector(addNewItem(_:)), #selector(addExistingItem(_:)), #selector(openProjectFile(_:)), #selector(runAllTests(_:)): workspaceURL != nil
         case #selector(manageNuGetPackages(_:)): isDotNetProject
         case #selector(deleteAllBreakpoints(_:)): !breakpoints.isEmpty
+        case #selector(toggleBookmark(_:)): current?.url != nil
+        case #selector(nextBookmark(_:)), #selector(previousBookmark(_:)), #selector(clearBookmarks(_:)): !bookmarks.isEmpty
+        case #selector(navigateBackward(_:)): !history.back.isEmpty
+        case #selector(navigateForward(_:)): !history.forward.isEmpty
         case #selector(saveDocument(_:)), #selector(saveDocumentAs(_:)): current != nil
         case #selector(goToDefinition(_:)), #selector(findAllReferences(_:)), #selector(renameSymbol(_:)), #selector(showQuickActions(_:)): current?.textView.isEditable == true
         case #selector(extractMethod(_:)): current?.textView.isEditable == true && (current?.textView.selectedRange().length ?? 0) > 0

@@ -26,14 +26,42 @@ public struct ColorTheme: Sendable, Equatable {
 }
 
 public enum ColorThemes {
+    // The default look: calm neutrals, one indigo accent, and softer syntax colors.
     public static let light = ColorTheme(
-        id: "light", name: "Light", isDark: false,
+        id: "light", name: "Modern Light", isDark: false,
+        background: 0xFFFFFF, text: 0x1F2937, gutterText: 0x9CA3AF, gutterCurrent: 0x374151,
+        sidebar: 0xF8F9FB, chrome: 0xF1F3F6, separator: 0xE2E5EA, accent: 0x4F5BD5,
+        comment: 0x6B7280, string: 0x047857, keyword: 0x6D3FC9, type: 0x0E7490, number: 0xB45309, function: 0x2563EB, attribute: 0x9333EA, tag: 0x1D4ED8)
+
+    public static let dark = ColorTheme(
+        id: "dark", name: "Modern Dark", isDark: true,
+        background: 0x16181D, text: 0xE4E7EC, gutterText: 0x5A6270, gutterCurrent: 0xC8CDD6,
+        sidebar: 0x1B1E24, chrome: 0x22252C, separator: 0x2E323B, accent: 0x6E7BF2,
+        comment: 0x6B7686, string: 0x8FD4A6, keyword: 0xB69CFF, type: 0x6FD3E8, number: 0xF2B872, function: 0x7FB4FF, attribute: 0xE5A1D8, tag: 0x7FB4FF)
+
+    /// The second dark option: neutral graphite grays with a soft teal accent, easy on the eyes.
+    public static let gray = ColorTheme(
+        id: "gray", name: "Gray", isDark: true,
+        background: 0x2B2C2F, text: 0xDADBDD, gutterText: 0x6F7176, gutterCurrent: 0xC4C5C8,
+        sidebar: 0x333438, chrome: 0x3B3C41, separator: 0x4A4B50, accent: 0x3E9C92,
+        comment: 0x85878C, string: 0xA8C992, keyword: 0x8FBBD9, type: 0x7CC7BC, number: 0xDDB779, function: 0xD8C48F, attribute: 0xC4A8D6, tag: 0x8FBBD9)
+
+    /// A deep navy dark theme with a sky-blue accent.
+    public static let midnight = ColorTheme(
+        id: "midnight", name: "Midnight", isDark: true,
+        background: 0x0F172A, text: 0xE2E8F0, gutterText: 0x475569, gutterCurrent: 0xCBD5E1,
+        sidebar: 0x131D33, chrome: 0x1A2540, separator: 0x27344F, accent: 0x2F8FD0,
+        comment: 0x64748B, string: 0x86EFAC, keyword: 0xC4B5FD, type: 0x67E8F9, number: 0xFDBA74, function: 0x7DD3FC, attribute: 0xF0ABFC, tag: 0x7DD3FC)
+
+    // Visual Studio's own colors, for anyone who prefers them.
+    public static let visualStudioLight = ColorTheme(
+        id: "vs-light", name: "Visual Studio Light", isDark: false,
         background: 0xFFFFFF, text: 0x1E1E1E, gutterText: 0x2B91AF, gutterCurrent: 0x0B216F,
         sidebar: 0xF5F5F5, chrome: 0xEEEEF2, separator: 0xCCCEDB, accent: 0x007ACC,
         comment: 0x008000, string: 0xA31515, keyword: 0x0000FF, type: 0x2B91AF, number: 0x098658, function: 0x74531F, attribute: 0x001080, tag: 0x800000)
 
-    public static let dark = ColorTheme(
-        id: "dark", name: "Dark", isDark: true,
+    public static let visualStudioDark = ColorTheme(
+        id: "vs-dark", name: "Visual Studio Dark", isDark: true,
         background: 0x1E1E1E, text: 0xD4D4D4, gutterText: 0x858585, gutterCurrent: 0xC6C6C6,
         sidebar: 0x252526, chrome: 0x2D2D30, separator: 0x3F3F46, accent: 0x007ACC,
         comment: 0x6A9955, string: 0xCE9178, keyword: 0x569CD6, type: 0x4EC9B0, number: 0xB5CEA8, function: 0xDCDCAA, attribute: 0x9CDCFE, tag: 0x569CD6)
@@ -74,8 +102,8 @@ public enum ColorThemes {
         sidebar: 0xEEE8D5, chrome: 0xEEE8D5, separator: 0xD3CBB7, accent: 0x268BD2,
         comment: 0x93A1A1, string: 0x2AA198, keyword: 0x859900, type: 0xB58900, number: 0xD33682, function: 0x268BD2, attribute: 0xCB4B16, tag: 0x268BD2)
 
-    /// In the order shown in Options. "system" (Light or Dark, following macOS) comes first and isn't a theme of its own.
-    public static let all: [ColorTheme] = [light, dark, blue, highContrast, monokai, dracula, solarizedDark, solarizedLight]
+    /// In the order shown in Options. "system" (Modern Light or Modern Dark, following macOS) comes first and isn't a theme of its own.
+    public static let all: [ColorTheme] = [light, dark, gray, midnight, visualStudioLight, visualStudioDark, blue, highContrast, monokai, dracula, solarizedDark, solarizedLight]
 
     public static func theme(id: String?) -> ColorTheme? { all.first { $0.id == id } }
 }

@@ -143,6 +143,13 @@ enum MainMenu {
             refactor.add("Extract Method…", #selector(WorkspaceWindowController.extractMethod(_:)), "m", [.command, .option])
             menu.add("Refactor", nil).submenu = refactor
             menu.add("Insert Snippet…", #selector(WorkspaceWindowController.showSnippetsManager(_:)))
+            let bookmarks = NSMenu(title: "Bookmarks")
+            bookmarks.add("Toggle Bookmark", #selector(WorkspaceWindowController.toggleBookmark(_:)), "k", [.command, .control])
+            bookmarks.add("Next Bookmark", #selector(WorkspaceWindowController.nextBookmark(_:)), "n", [.command, .control])
+            bookmarks.add("Previous Bookmark", #selector(WorkspaceWindowController.previousBookmark(_:)), "p", [.command, .control])
+            bookmarks.addItem(.separator())
+            bookmarks.add("Clear All Bookmarks", #selector(WorkspaceWindowController.clearBookmarks(_:)))
+            menu.add("Bookmarks", nil).submenu = bookmarks
             menu.addItem(.separator())
             menu.add("Toggle Comment", #selector(CodeTextView.toggleComment(_:)), "/")
             menu.add("Indent", #selector(CodeTextView.indentSelection(_:)), "]")
@@ -160,6 +167,7 @@ enum MainMenu {
             menu.add("Hide Panel", #selector(WorkspaceWindowController.toggleConsole(_:)), "y", [.command, .shift])
             menu.add("Output", #selector(WorkspaceWindowController.showOutput(_:)), "u", [.command, .shift])
             menu.add("Error List", #selector(WorkspaceWindowController.showErrorList(_:)), "m", [.command, .shift])
+            menu.add("Task List", #selector(WorkspaceWindowController.showTaskList(_:)), "t", [.command, .option])
             menu.add("Find Results", #selector(WorkspaceWindowController.showFindResults(_:)))
             menu.add("Query Results", #selector(WorkspaceWindowController.showQueryResults(_:)))
             menu.add("Terminal", #selector(WorkspaceWindowController.showTerminal(_:)), "`", .control)
@@ -168,6 +176,9 @@ enum MainMenu {
             toolbars.add("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option])
             toolbars.add("Customize…", #selector(WorkspaceWindowController.customizeToolbar(_:)))
             menu.add("Toolbars", nil).submenu = toolbars
+            menu.addItem(.separator())
+            menu.add("Navigate Backward", #selector(WorkspaceWindowController.navigateBackward(_:)), "-", .control)
+            menu.add("Navigate Forward", #selector(WorkspaceWindowController.navigateForward(_:)), "-", [.control, .shift])
             menu.addItem(.separator())
             menu.add("Bigger", #selector(WorkspaceWindowController.increaseFontSize(_:)), "+")
             menu.add("Smaller", #selector(WorkspaceWindowController.decreaseFontSize(_:)), "-")

@@ -143,7 +143,7 @@ final class OptionsWindow: NSObject {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 330), styleMask: [.titled, .closable], backing: .buffered, defer: true)
         window.title = "Options"
         window.isReleasedWhenClosed = false
-        appearance.addItems(withTitles: ["Use System Setting (Light or Dark)"] + ColorThemes.all.map(\.name))
+        appearance.addItems(withTitles: ["Use System Setting (Modern Light or Dark)"] + ColorThemes.all.map(\.name))
         explorerSide.addItems(withTitles: ["Right (like Visual Studio)", "Left"])
         fontSize.minValue = 9
         fontSize.maxValue = 32

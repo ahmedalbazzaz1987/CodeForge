@@ -23,6 +23,14 @@ public struct SearchMatch: Sendable, Equatable {
     public let length: Int        // UTF-16
     /// The whole line, without its line break.
     public let preview: String
+
+    public init(url: URL, line: Int, column: Int, length: Int, preview: String) {
+        self.url = url
+        self.line = line
+        self.column = column
+        self.length = length
+        self.preview = preview
+    }
 }
 
 public enum FileSearch {

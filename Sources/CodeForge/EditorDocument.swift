@@ -33,6 +33,8 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
     /// Called after every edit (the design view uses it to refresh).
     var onTextChange: (() -> Void)?
     var onSelectionChange: (() -> Void)?
+    /// An edit is about to add or remove line breaks: (1-based line, removed, added). Bookmarks and breakpoints follow.
+    var onLinesChange: ((Int, Int, Int) -> Void)?
 
     var displayName: String { url?.lastPathComponent ?? untitledName }
 
@@ -265,6 +267,13 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
         if hasDiagnostics { setDiagnostics([]) }
         session?.textChanged()
         rehighlight()
+    }
+
+    func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
+        let removed = (textView.string as NSString).substring(with: range).filter { $0 == "\n" }.count
+        let added = (replacementString ?? "").filter { $0 == "\n" }.count
+        if removed != added { onLinesChange?(ruler.line(at: range.location) + 1, removed, added) }
+        return true
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {

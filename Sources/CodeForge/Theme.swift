@@ -28,8 +28,8 @@ enum Theme {
         let luminance = 0.2126 * Double((hex >> 16) & 0xFF) + 0.7152 * Double((hex >> 8) & 0xFF) + 0.0722 * Double(hex & 0xFF)
         return luminance > 140 ? rgb(hex).blended(withFraction: 0.45, of: .black) ?? rgb(hex) : rgb(hex)
     }
-    static let statusIdle = rgb(0x68217A)       // no folder open
-    static let statusBusy = rgb(0xCA5100)       // a program is running
+    static let statusIdle = rgb(0x475569)       // no folder open
+    static let statusBusy = rgb(0xC2410C)       // a program is running
     static let errorRed = dynamic(0xE51400, 0xF14C4C)
     static let warningYellow = dynamic(0xBF8803, 0xCCA700)
     static let lens = dynamic(0x8A8A8A, 0x7A7A7A)
