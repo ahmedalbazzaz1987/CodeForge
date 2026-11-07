@@ -392,15 +392,24 @@ final class OutputDecodingTests: XCTestCase {
         var decoder = OutputDecoder()
         XCTAssertEqual(decoder.append(Array("one\nerror: two\n".utf8)), [.init(text: "one\n", kind: .normal), .init(text: "error: two\n", kind: .error)])
         // A prompt with no line break shows right away.
-        XCTAssertEqual(decoder.append(Array("Name? ".utf8)), [.init(text: "Name? ", kind: .normal)])
+        XCTAssertEqual(decoder.append(Array("Name? ".utf8)), [])
+        XCTAssertEqual(decoder.flushPartialLine(), [.init(text: "Name? ", kind: .normal)])
         XCTAssertEqual(decoder.append(Array("\n".utf8)), [.init(text: "\n", kind: .normal)])
         // An Arabic letter split between two reads stays whole.
         let letter = Array("م".utf8)
         XCTAssertEqual(decoder.append([letter[0]]), [])
-        XCTAssertEqual(decoder.append([letter[1]]), [.init(text: "م", kind: .normal)])
+        XCTAssertEqual(decoder.flushPartialLine(), [])
+        XCTAssertEqual(decoder.append([letter[1]]), [])
+        XCTAssertEqual(decoder.flushPartialLine(), [.init(text: "م", kind: .normal)])
         XCTAssertEqual(decoder.append(Array("\r\nnext\rover\n".utf8)), [.init(text: "\n", kind: .normal), .init(text: "over\n", kind: .normal)])
-        XCTAssertEqual(decoder.append(Array("end".utf8)), [.init(text: "end", kind: .normal)])
-        XCTAssertEqual(decoder.finish(), [])
+        XCTAssertEqual(decoder.append(Array("end".utf8)), [])
+        XCTAssertEqual(decoder.finish(), [.init(text: "end", kind: .normal)])
+    }
+
+    func testALineWrittenInPiecesGetsItsColor() {
+        var decoder = OutputDecoder()
+        XCTAssertEqual(decoder.append(Array("Failed!  ".utf8)), [])
+        XCTAssertEqual(decoder.append(Array("- Failed: 1\n".utf8)), [.init(text: "Failed!  - Failed: 1\n", kind: .error)])
     }
 }
 
@@ -462,5 +471,41 @@ final class OutputProgressTests: XCTestCase {
     func testSwiftPMStepCounterIsHiddenButProgramOutputIsNot() {
         XCTAssertEqual(decode("[1\u{2009}/\u{2009}3]\r\n[2\u{2009}/\u{2009}3] App-product\r\nBuild complete!\r\n"), "Build complete!\n")
         XCTAssertEqual(decode("[1/3] mine\n"), "[1/3] mine\n")
+    }
+}
+
+final class DotNetProjectKindTests: XCTestCase {
+    private func folder(_ project: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try project.write(to: url.appendingPathComponent("App.csproj"), atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    func testTellsLibrariesFromPrograms() throws {
+        XCTAssertEqual(BuildSystem.libraryProject(in: try folder(#"<Project Sdk="Microsoft.NET.Sdk"></Project>"#)), "App")
+        XCTAssertEqual(BuildSystem.libraryProject(in: try folder(#"<Project Sdk="Microsoft.NET.Sdk.Razor"></Project>"#)), "App")
+        XCTAssertNil(BuildSystem.libraryProject(in: try folder(#"<Project Sdk="Microsoft.NET.Sdk"><OutputType>Exe</OutputType></Project>"#)))
+        XCTAssertNil(BuildSystem.libraryProject(in: try folder(#"<Project Sdk="Microsoft.NET.Sdk.Web"></Project>"#)))
+        XCTAssertNil(BuildSystem.libraryProject(in: try folder(#"<Project Sdk="Microsoft.NET.Sdk"><PackageReference Include="Microsoft.NET.Test.Sdk" /></Project>"#)))
+    }
+
+    func testStartRunsTheTestsOfATestProject() throws {
+        let tests = try folder(#"<Project Sdk="Microsoft.NET.Sdk"><PackageReference Include="Microsoft.NET.Test.Sdk" /></Project>"#)
+        XCTAssertEqual(BuildSystem.detect(in: tests)?.run, "dotnet test")
+        let program = try folder(#"<Project Sdk="Microsoft.NET.Sdk"><OutputType>Exe</OutputType></Project>"#)
+        XCTAssertEqual(BuildSystem.detect(in: program)?.run, "dotnet run")
+    }
+}
+
+final class TestOutputTests: XCTestCase {
+    func testFailingTestOutputIsRedButNotAFileError() {
+        let line = "[xUnit.net 00:00:00.09]     App.Tests.First [FAIL]"
+        XCTAssertEqual(DiagnosticParser.parse(line), [])
+        XCTAssertEqual(OutputClassifier.kind(of: line), .error)
+        XCTAssertEqual(OutputClassifier.kind(of: "Failed!  - Failed:     1, Passed:     0"), .error)
+        XCTAssertEqual(OutputClassifier.kind(of: "  Failed App.Tests.First [4 ms]"), .error)
+        XCTAssertEqual(OutputClassifier.kind(of: "Passed!  - Failed:     0, Passed:     1"), .normal)
     }
 }

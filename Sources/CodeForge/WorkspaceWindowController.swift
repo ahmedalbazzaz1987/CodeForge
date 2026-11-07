@@ -548,7 +548,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     func open(_ url: URL, line: Int, column: Int? = nil) {
         recordPlace()
         open(url)
-        guard let current, current.url?.standardizedFileURL == url.standardizedFileURL else { return }
+        guard let current, current.url?.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() else { return }
         current.reveal(line: line, column: column)
     }
 
@@ -561,7 +561,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             return
         }
         let target = url.standardizedFileURL
-        if let index = documents.firstIndex(where: { $0.url?.standardizedFileURL == target }) {
+        // The same file through a symbolic link (a debugger reports the real path) is the same tab.
+        if let index = documents.firstIndex(where: { $0.url?.resolvingSymlinksInPath() == target.resolvingSymlinksInPath() }) {
             return select(index)
         }
         do {
@@ -840,6 +841,16 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     /// Asks to save a document with unsaved changes. Returns false if the user cancelled.
     private func confirmDiscard(_ document: EditorDocument) -> Bool {
         guard document.isDirty else { return true }
+        #if DEBUG
+        if let answer = ProcessInfo.processInfo.environment["CF_DISCARD"] {
+            print("ASKED about unsaved \(document.displayName); answering \(answer)")
+            switch answer {
+            case "save": return save(document)
+            case "dont": return true
+            default: return false
+            }
+        }
+        #endif
         let alert = NSAlert()
         alert.messageText = "Do you want to save the changes you made to “\(document.displayName)”?"
         alert.informativeText = "Your changes will be lost if you don't save them."
@@ -1119,6 +1130,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     @objc func runActiveFile(_ sender: Any?) {
         if let key = customCommandKey, let command = defaults.string(forKey: key), !command.isEmpty, let folder = workspaceURL {
             saveAllDocuments(nil)
+            guard toolIsInstalled(for: command) else { return }
             start(command, in: folder)
             return console.focusInput()
         }
@@ -1126,7 +1138,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if let plan = projectRunPlan, let run = plan.run {
             saveAllDocuments(nil)
             runningLanguage = nil
-            guard toolIsInstalled(for: run) else { return }
+            guard toolIsInstalled(for: run), !sayLibraryCantStart() else { return }
             start(run, in: URL(fileURLWithPath: plan.folder))
             return console.focusInput()
         }
@@ -1145,6 +1157,17 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         start(CommandTemplate.expand(template, file: file, outputDirectory: output), in: file.deletingLastPathComponent())
         console.focusInput()   // a program may ask for input, and Return shouldn't go to the editor
+    }
+
+    /// A class library has no program to start; say so, as Visual Studio does, rather than show dotnet's own error.
+    private func sayLibraryCantStart() -> Bool {
+        guard let workspaceURL, let library = BuildSystem.libraryProject(in: workspaceURL) else { return false }
+        setConsoleVisible(true)
+        panel.show(.output)
+        console.clear(nil)
+        console.append("\(library) is a class library, so it can't be started directly. Use Build to compile it, or add it to a program that uses it.\n", .info)
+        runStatus.stringValue = "A class library can't be started"
+        return true
     }
 
     /// Says what to install, instead of running a command that can only fail.
@@ -1268,7 +1291,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     @objc func newProject(_ sender: Any?) {
         guard let window else { return }
         NewProjectSheet { [weak self] template, name, location in
-            guard let self else { return }
+            self?.createProject(template, named: name, in: location)
+        }.show(in: window)
+    }
+
+    private func createProject(_ template: ProjectTemplate, named name: String, in location: URL) {
             if let tool = ToolRequirement.tool(for: template), !ToolCheck.isAvailable(tool) {
                 let name = ToolRequirement.displayName(for: tool)
                 guard Prompt.confirm("\(name) isn't installed",
@@ -1298,7 +1325,6 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             } catch {
                 Prompt.show("Couldn't create the project", message: error.localizedDescription)
             }
-        }.show(in: window)
     }
 
     @objc func cloneRepository(_ sender: Any?) {
@@ -1519,6 +1545,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if let debugSession, debugSession.state == .paused { return debugSession.resume() }
         guard debugSession == nil, !isRunning else { return }
         if current?.language.id == "python" { return startPythonDebugging() }
+        if sayLibraryCantStart() { return }
         if isDotNetProject, projectRunPlan != nil || ["csharp", "vb", "fsharp", "razor"].contains(current?.language.id ?? "") {
             return startDotNetDebugging()
         }
@@ -1999,14 +2026,69 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     #if DEBUG
     func debugSendInput(_ line: String) {
-        console.append(line + "\n", .input)
-        runner.send(line)
+        console.onInput?(line)   // the same path as pressing Return in the field
+    }
+
+    /// Creates a project from a template, starts it, and reports what happened; for testing every template in turn.
+    func debugTestTemplate(_ id: String, name: String, in location: URL, timeout: TimeInterval) {
+        guard let template = ProjectTemplates.all.first(where: { $0.id == id }) else { print("RESULT: no template \(id)"); exit(2) }
+        let began = Date()
+        createProject(template, named: name, in: location)
+        func whenIdle(_ limit: TimeInterval, then next: @escaping (Bool) -> Void) {
+            let start = Date()
+            Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+                guard let self else { return }
+                let timedOut = Date().timeIntervalSince(start) > limit
+                if !isRunning || timedOut { timer.invalidate(); next(timedOut) }
+            }
+        }
+        whenIdle(150) { [weak self] timedOut in
+            guard let self else { return }
+            print("CREATED in \(Int(Date().timeIntervalSince(began)))s timedOut=\(timedOut) status=\(runStatus.stringValue) tabs=\(documents.map(\.displayName)) workspace=\(workspaceURL?.lastPathComponent ?? "-")")
+            if self.documents.isEmpty {   // the project wasn't created: show why
+                self.debugDump()
+                exit(0)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                self.runActiveFile(nil)
+                whenIdle(timeout) { timedOut in
+                    print("RUN timedOut=\(timedOut)")
+                    self.debugDump()
+                    self.runner.stop()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+                }
+            }
+        }
+    }
+
+    /// The bottom panel's » menu: lists its entries and picks one.
+    func debugOverflow(pick title: String) {
+        let menu = panel.overflowMenu()
+        print("OVERFLOW:", menu.items.map(\.title), "hidden tabs:", panel.debugHiddenTabs)
+        if let index = menu.items.firstIndex(where: { $0.title == title }) { menu.performActionForItem(at: index) }
+        panel.layoutSubtreeIfNeeded()
+        print("OVERFLOW picked:", panel.selected.title, "hidden tabs now:", panel.debugHiddenTabs)
+    }
+
+    /// A real mouse click, through the window's own event handling, on the Input row at a distance from its left edge.
+    func debugClickInputRow(atX x: CGFloat) {
+        guard let window else { return }
+        window.makeFirstResponder(current?.textView)
+        let point = console.inputRowPoint(x: x)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                window.sendEvent(event)
+            }
+        }
+        print("CLICK at x=\(x): focus \(window.firstResponder.map { String(describing: type(of: $0)) } ?? "none") inField=\(console.isWaitingInInput)")
     }
 
     func debugShowDebugTab() { showPanelTab(.debug) }
 
     func debugDump() {
         print("--- FRAMES: \(console.debugFrames)")
+        print("--- COLORS: \(console.debugColoredLines)")
         print("--- OUTPUT ---\n\(console.text)\n--- STATUS: \(runStatus.stringValue)")
         print("--- ERRORS: \(panel.errors.diagnostics.map { "\(($0.file as NSString).lastPathComponent):\($0.line) \($0.message)" })")
         print("--- TABS: \(documents.map(\.displayName)) focus: \(window?.firstResponder.map { String(describing: type(of: $0)) } ?? "none")")

@@ -86,7 +86,10 @@ enum Prompt {
 
     static func confirm(_ title: String, message: String, button: String) -> Bool {
         #if DEBUG
-        if ProcessInfo.processInfo.environment["CF_ANSWER"] != nil { return true }
+        if let answer = ProcessInfo.processInfo.environment["CF_ANSWER"] {
+            print("CONFIRM:", title, "—", message, "[\(button)] answering", answer == "no" ? "Cancel" : button)
+            return answer != "no"
+        }
         #endif
         let alert = NSAlert()
         alert.messageText = title

@@ -94,6 +94,18 @@ final class ConsoleView: NSView {
     var text: String { textView.string }
 
     #if DEBUG
+    func inputRowPoint(x: CGFloat) -> NSPoint { inputRow.convert(NSPoint(x: x, y: inputRow.bounds.midY), to: nil) }
+    /// The lines shown in red or yellow, to check the coloring.
+    var debugColoredLines: [String] {
+        guard let storage = textView.textStorage else { return [] }
+        var lines: [String] = []
+        storage.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let color = value as? NSColor else { return }
+            let name = color == .systemRed ? "RED" : color == Theme.warningYellow ? "YELLOW" : nil
+            if let name { lines.append(name + ": " + storage.attributedSubstring(from: range).string.prefix(90).trimmingCharacters(in: .newlines)) }
+        }
+        return lines
+    }
     var debugFrames: String { "self \(frame) scroll \(scroll.frame) text \(textView.frame) container \(textView.textContainer?.size ?? .zero)" }
     #endif
 
@@ -279,15 +291,24 @@ final class Runner {
         Thread.detachNewThread { [weak self] in
             var decoder = OutputDecoder()
             var buffer = [UInt8](repeating: 0, count: 16384)
-            while true {
-                let count = Darwin.read(fd, &buffer, buffer.count)
-                guard count > 0 else { break }
-                let pieces = decoder.append(Array(buffer[0..<count]))
-                if pieces.isEmpty { continue }
+            func show(_ pieces: [OutputDecoder.Piece]) {
+                if pieces.isEmpty { return }
                 DispatchQueue.main.async {
                     guard let self, self.generation == generation else { return }
                     for piece in pieces { self.onOutput?(Runner.stripTerminalCodes(piece.text), ConsoleView.Kind(piece.kind)) }
                 }
+            }
+            while true {
+                // Programs often write a line in pieces (dotnet does). Wait a moment for the rest, so the whole line
+                // gets its color; if nothing comes it's probably a prompt, and it shows right away.
+                var ready = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                if decoder.hasPartialLine, poll(&ready, 1, 40) == 0 {
+                    show(decoder.flushPartialLine())
+                    continue
+                }
+                let count = Darwin.read(fd, &buffer, buffer.count)
+                guard count > 0 else { break }
+                show(decoder.append(Array(buffer[0..<count])))
             }
             close(fd)
             let rest = decoder.finish()

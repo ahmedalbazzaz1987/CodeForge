@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.2
+
+More fixes, from running every project template and testing the debugger.
+
+- **Start on a test project runs its tests** (xUnit, NUnit, MSTest). Before, it finished without doing or saying anything.
+  Failing tests show in red and no longer add a false entry to the Error List.
+- **Start on a class library** explains that a library can't be started, as Visual Studio does, instead of showing
+  dotnet's own error. Start Debugging does the same.
+- **Go and Rust projects** now get the "isn't installed" message at Start too, not just when they're created.
+- **.NET breakpoints stop in projects reached through a symbolic link** (or under /tmp). They were silently skipped, and the file no longer opens in a second tab.
+- Lines that a program writes in pieces, as dotnet does, get the right color. Prompts still show right away.
+
 ## 0.11.1
 
 Fixes from a full test of the Mac version.

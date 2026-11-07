@@ -47,13 +47,21 @@ final class BottomPanel: NSView {
     }
 
     @objc private func showOverflowMenu(_ sender: NSButton) {
+        overflowMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY), in: sender)
+    }
+
+    #if DEBUG
+    var debugHiddenTabs: [String] { tabButtons.filter(\.isHidden).compactMap { Tab(rawValue: $0.tag)?.title } }
+    #endif
+
+    func overflowMenu() -> NSMenu {
         let menu = NSMenu()
         for tab in Tab.allCases {
             let item = ActionItem(title: tab.title) { [weak self] in self?.show(tab) }
             item.state = tab == selected ? .on : .off
             menu.addItem(item)
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY), in: sender)
+        return menu
     }
 
     override init(frame: NSRect) {

@@ -73,6 +73,35 @@ enum DevSnapshot {
                 }
             }
         }
+        if let spec = env["CF_TEMPLATE"] {
+            // "id:name:folder:seconds": create a project from a template, run it and print the result, then quit.
+            let parts = spec.components(separatedBy: ":")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                controller.debugTestTemplate(parts[0], name: parts[1], in: URL(fileURLWithPath: parts[2]), timeout: Double(parts[3]) ?? 20)
+            }
+            delay = 400
+        }
+        if let title = env["CF_OVERFLOW"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { controller.debugOverflow(pick: title) }
+        }
+        if let xs = env["CF_CLICK_INPUT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                for x in xs.split(separator: ",").compactMap({ Double($0) }) { controller.debugClickInputRow(atX: x) }
+            }
+        }
+        if env["CF_WATCHDOG"] != nil {
+            // The longest the main thread didn't answer: a freeze shows up here.
+            var last = Date(), worst = 0.0
+            Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
+                worst = max(worst, Date().timeIntervalSince(last)); last = Date()
+            }
+            atexit_b { print(String(format: "WATCHDOG: longest freeze %.0f ms", worst * 1000)) }
+        }
+        if let seconds = env["CF_QUIT"].flatMap(Double.init) {
+            // Quit the normal way, to check that nothing is left running.
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { NSApp.terminate(nil) }
+            delay = 400
+        }
         if env["CF_DEBUG_TAB"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { controller.debugShowDebugTab() }
         }

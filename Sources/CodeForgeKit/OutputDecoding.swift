@@ -18,6 +18,7 @@ public enum OutputClassifier {
         | \bFatal\ error:\                                            # Swift crashes
         | ^Build\ FAILED\b | ^FAILED\b | ^Failed!\s
         | ^zsh:\ .*(?:command\ not\ found|no\ such\ file|permission\ denied)
+        | \[FAIL\]\s*$ | ^Failed!\s | ^\s*Failed\ \S+\ \[\d                # a failing .NET test
         | ^Segmentation\ fault | ^Bus\ error | ^Illegal\ instruction | ^Abort\ trap
         """#)
     private static let warningPattern = try! NSRegularExpression(pattern: #"""
@@ -65,14 +66,21 @@ public struct OutputDecoder: Sendable {
             let kind = showedPartial ? OutputLineKind.normal : OutputClassifier.kind(of: line)
             pieces.append(Piece(text: line + "\n", kind: kind))
         }
-        // Show what's left of the line now, in case the program is waiting for input; keep a split character back.
-        let complete = bytes.count - Self.incompleteTail(of: bytes)
-        if complete > 0, bytes[..<complete].last != 13 {
-            pieces.append(Piece(text: String(decoding: bytes[..<complete], as: UTF8.self), kind: .normal))
-            bytes.removeSubrange(..<complete)
-            showedPartial = true
-        }
         return pieces
+    }
+
+    /// True while the end of a line is waiting: it may be a prompt, or the rest of the line may be about to come.
+    public var hasPartialLine: Bool { !bytes.isEmpty }
+
+    /// Shows what's waiting of the line, for when nothing more comes shortly: the program may be asking for input.
+    /// Keeps back a character split between reads, and a \r that may be half of \r\n.
+    public mutating func flushPartialLine() -> [Piece] {
+        let complete = bytes.count - Self.incompleteTail(of: bytes)
+        guard complete > 0, bytes[..<complete].last != 13 else { return [] }
+        let text = String(decoding: bytes[..<complete], as: UTF8.self)
+        bytes.removeSubrange(..<complete)
+        defer { showedPartial = true }
+        return [Piece(text: text, kind: showedPartial ? .normal : OutputClassifier.kind(of: text))]
     }
 
     public mutating func finish() -> [Piece] {

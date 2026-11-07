@@ -102,6 +102,21 @@ public enum BuildSystem {
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
     }
 
+    private static func isTestProject(_ project: String) -> Bool {
+        ["Microsoft.NET.Test.Sdk", "<IsTestProject>true", "MSTest.Sdk", "MSTest"].contains(where: project.contains)
+    }
+
+    /// The name of the class library in this folder, if the project there is one. A library can be built, but
+    /// not started: without an <OutputType> of Exe, these SDKs build a library.
+    public static func libraryProject(in folder: URL) -> String? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        guard let name = names.sorted().first(where: { [".csproj", ".vbproj", ".fsproj"].contains(where: $0.hasSuffix) }),
+              let project = try? String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8) else { return nil }
+        let plainSDK = project.contains("Sdk=\"Microsoft.NET.Sdk\"") || project.contains("Sdk=\"Microsoft.NET.Sdk.Razor\"")
+        let makesProgram = project.contains("Exe</OutputType>") || project.contains("<UseMaui>true") || isTestProject(project)
+        return plainSDK && !makesProgram ? (name as NSString).deletingPathExtension : nil
+    }
+
     /// Recognizes the project in a folder from the files at its top level.
     public static func detect(in folder: URL) -> BuildPlan? {
         let fm = FileManager.default
@@ -117,6 +132,8 @@ public enum BuildSystem {
             if dotnetProject == nil, let project = firstProject(below: folder) { runTarget = " --project " + CommandTemplate.shellQuote(project) }
             let name = ((dotnetProject ?? solution)! as NSString).deletingPathExtension
             var run = "dotnet run" + runTarget
+            // A test project has no program to run: `dotnet run` would do nothing and say nothing.
+            if let project = dotnetProject, isTestProject(read(project)) { run = "dotnet test" }
             // .NET MAUI targets several platforms; on a Mac, Start runs the Mac Catalyst one.
             if let project = dotnetProject, read(project).contains("<UseMaui>true</UseMaui>"),
                let catalyst = firstMatch(#"(net\d+\.\d+-maccatalyst)"#, in: read(project)) {
