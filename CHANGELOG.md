@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.11.1
+
+Fixes from a full test of the Mac version.
+
+**Running programs**
+- Programs now run on a real terminal (a pseudo-terminal). Output that was lost when a program crashed now appears, and
+  stdout and stderr come in the order they were written. A crash says so: "The program crashed: Segmentation fault".
+- Output colors go by the content: errors red, warnings yellow, and no more red "Build complete!".
+- Progress that rewrites its line (like git's percentages) keeps only the last version, and SwiftPM's step counter is hidden.
+- The Stop button says "Stopped" instead of reporting a failure.
+- The Input row under Output is taller, and clicking anywhere in it works. Start puts the cursor there, and it returns to
+  the code when the program ends.
+- If a language's tools aren't installed (Java, Go, Rust…), New Project and Start say what to install, instead of failing
+  with an unclear message. Java is checked properly, because macOS always has a /usr/bin/java that does nothing by itself.
+
+**Error List and IntelliSense**
+- An error reported by both the build and the language server is listed once.
+- C and C++ files no longer show false errors from a missing language standard: clangd is told C17 or C++20 unless the
+  project has its own settings, and new C and C++ projects include `compile_flags.txt`.
+- TypeScript runs now list type errors in the Error List, and the program still runs.
+
+**Projects and windows**
+- Opening another project closes the old project's tabs, errors, output, Find Results and Task List, like closing a solution
+  in Visual Studio. It asks about unsaved files first. Closing a tab removes its errors from the list.
+- Properties shows the new size and date after a save.
+- In a small window the editor keeps its room: the side panes and the bottom panel give way, and panel tabs that don't
+  fit move to a » menu. The Debug panel's columns fit the panel, so Value stays visible.
+- The output no longer wraps too early when the panel was hidden at first.
+- New Project closes its sheet before the project opens, and Xcode's tools are looked up in the background at launch, so
+  the first C, C++ or Swift project shouldn't freeze the window.
+
+**Toolbox and snippets**
+- Snippets for C, C++, Java, Go and Rust, and a TypeScript group of its own.
+
 ## 0.11.0
 
 A modern look, and more of Visual Studio's everyday tools. By Ahmed Al-Bazzaz.

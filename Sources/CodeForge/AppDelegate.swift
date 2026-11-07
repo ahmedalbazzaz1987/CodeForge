@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         windowController.showWindow(nil)
         NSApp.activate()
         Updater.shared.checkInBackgroundIfDue()
+        LanguageServerManager.shared.warmUp()
         #if DEBUG
         DevSnapshot.runIfRequested(windowController)
         #endif

@@ -103,3 +103,36 @@ public enum DiagnosticParser {
         return results
     }
 }
+
+/// The same problem can come from the build and from the language server, in slightly different words.
+public enum DiagnosticMerge {
+    /// The build's problems plus the language server's, without listing one problem twice. The two can disagree by a
+    /// line: for a missing ';' the compiler names the line that lacks it, and clangd the line after. The build's wins.
+    public static func merged(run: [Diagnostic], live: [Diagnostic], folder: URL) -> [Diagnostic] {
+        func same(_ a: Diagnostic, _ b: Diagnostic, within lines: Int) -> Bool {
+            guard abs(a.line - b.line) <= lines, path(of: a, in: folder) == path(of: b, in: folder) else { return false }
+            let first = normalized(a.message), second = normalized(b.message)
+            return first == second || first.contains(second) || second.contains(first)
+        }
+        var result: [Diagnostic] = []
+        for diagnostic in run where !result.contains(where: { same($0, diagnostic, within: 0) }) { result.append(diagnostic) }
+        let fromRun = result
+        for diagnostic in live where !fromRun.contains(where: { same($0, diagnostic, within: 1) }) && !result.contains(where: { same($0, diagnostic, within: 0) }) {
+            result.append(diagnostic)
+        }
+        return result
+    }
+
+    /// A problem's file, with symlinks resolved (the same place can be /tmp or /private/tmp).
+    public static func path(of diagnostic: Diagnostic, in folder: URL) -> String {
+        diagnostic.url(relativeTo: folder).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    /// "Expected ';' after expression (fix available)" and "expected ';' after expression [-Wfoo]" say the same thing.
+    static func normalized(_ message: String) -> String {
+        message.lowercased()
+            .replacingOccurrences(of: #"\s*\((?:fix available|fixes available)\)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s*\[[^\]]*\]\s*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+    }
+}

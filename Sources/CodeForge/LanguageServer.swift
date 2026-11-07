@@ -262,8 +262,24 @@ final class LanguageServerManager {
         return "mkdir -p \(folder) && cd \(folder) && npm install --no-fund --no-audit --loglevel=error " + spec.npmPackages.joined(separator: " ")
     }
 
+    /// Looks up Xcode's servers at launch, off the main thread: xcrun can take seconds the first time, which
+    /// would otherwise freeze the window when the first C, C++ or Swift project opens.
+    func warmUp() {
+        let names = LanguageServerSpecs.all.filter(\.viaXcrun).flatMap(\.executables)
+        DispatchQueue.global(qos: .utility).async {
+            let results = names.map { ($0, Self.xcrunLookup($0)) }
+            DispatchQueue.main.async { for (name, url) in results { self.xcrunCache[name] = url } }
+        }
+    }
+
     private func xcrunFind(_ name: String) -> URL? {
         if let cached = xcrunCache[name] { return cached }
+        let result = Self.xcrunLookup(name)
+        xcrunCache[name] = result
+        return result
+    }
+
+    private static func xcrunLookup(_ name: String) -> URL? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = ["--find", name]
@@ -276,7 +292,6 @@ final class LanguageServerManager {
             process.waitUntilExit()
             if process.terminationStatus == 0, !path.isEmpty { result = URL(fileURLWithPath: path) }
         }
-        xcrunCache[name] = result
         return result
     }
 }

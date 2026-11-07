@@ -94,7 +94,59 @@ public enum BuiltInSnippets {
         CodeSnippet(id: "builtin.\(language).\(shortcut)", title: title, shortcut: shortcut, languageId: language, body: body, isBuiltIn: true)
     }
 
-    public static let all: [CodeSnippet] = vb + csharp + python + javascript + swift + html
+    public static let all: [CodeSnippet] = vb + csharp + python + javascript + typescript + swift + html + c + cpp + java + go + rust
+
+    static let c: [CodeSnippet] = [
+        make("c", "main", "main", "#include <stdio.h>\n\nint main(void) {\n    $0\n    return 0;\n}"),
+        make("c", "for", "for loop", "for (int i = 0; i < $0count; i++) {\n    \n}"),
+        make("c", "if", "if statement", "if ($0condition) {\n    \n}"),
+        make("c", "while", "while loop", "while ($0condition) {\n    \n}"),
+        make("c", "struct", "typedef struct", "typedef struct {\n    int $0value;\n} Name;"),
+        make("c", "pf", "printf", "printf(\"$0\\n\");"),
+    ]
+
+    static let cpp: [CodeSnippet] = [
+        make("cpp", "main", "main", "#include <iostream>\n\nint main() {\n    $0\n    return 0;\n}"),
+        make("cpp", "class", "Class", "class $0Name {\npublic:\n    Name() = default;\n\nprivate:\n    int value_ = 0;\n};"),
+        make("cpp", "for", "Range for", "for (const auto& item : $0items) {\n    \n}"),
+        make("cpp", "if", "if statement", "if ($0condition) {\n    \n}"),
+        make("cpp", "cout", "std::cout", "std::cout << $0 << std::endl;"),
+        make("cpp", "try", "try…catch", "try {\n    $0\n} catch (const std::exception& error) {\n    std::cerr << error.what() << std::endl;\n}"),
+    ]
+
+    static let java: [CodeSnippet] = [
+        make("java", "main", "main method", "public static void main(String[] args) {\n    $0\n}"),
+        make("java", "sout", "System.out.println", "System.out.println($0);"),
+        make("java", "class", "Class", "public class $0Name {\n    \n}"),
+        make("java", "for", "for each", "for (var item : $0items) {\n    \n}"),
+        make("java", "if", "if statement", "if ($0condition) {\n    \n}"),
+        make("java", "try", "try…catch", "try {\n    $0\n} catch (Exception error) {\n    error.printStackTrace();\n}"),
+    ]
+
+    static let typescript: [CodeSnippet] = [
+        make("typescript", "fn", "Typed function", "function $0name(value: string): string {\n    return value;\n}"),
+        make("typescript", "afn", "Arrow function", "const $0name = (value: string): string => {\n    return value;\n};"),
+        make("typescript", "int", "Interface", "interface $0Name {\n    id: number;\n}"),
+        make("typescript", "type", "Type", "type $0Name = {\n    id: number;\n};"),
+        make("typescript", "class", "Class", "class $0Name {\n    constructor(private readonly id: number) {}\n}"),
+        make("typescript", "log", "console.log", "console.log($0);"),
+    ]
+
+    static let go: [CodeSnippet] = [
+        make("go", "main", "main", "func main() {\n\t$0\n}"),
+        make("go", "func", "Function", "func $0name() error {\n\treturn nil\n}"),
+        make("go", "iferr", "if err != nil", "if err != nil {\n\treturn $0err\n}"),
+        make("go", "for", "for range", "for _, item := range $0items {\n\t\n}"),
+        make("go", "pl", "fmt.Println", "fmt.Println($0)"),
+    ]
+
+    static let rust: [CodeSnippet] = [
+        make("rust", "main", "main", "fn main() {\n    $0\n}"),
+        make("rust", "fn", "Function", "fn $0name() -> i32 {\n    0\n}"),
+        make("rust", "struct", "Struct", "struct $0Name {\n    id: u32,\n}"),
+        make("rust", "match", "match", "match $0value {\n    Some(item) => {}\n    None => {}\n}"),
+        make("rust", "pl", "println!", "println!(\"{}\", $0);"),
+    ]
 
     static let vb: [CodeSnippet] = [
         make("vb", "Sub", "Sub procedure", "Public Sub $0MethodName()\n    \nEnd Sub"),

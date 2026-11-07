@@ -20,6 +20,41 @@ final class BottomPanel: NSView {
     private(set) var selected: Tab = .output
     private var tabButtons: [NSButton] = []
     private let content = NSView()
+    private let tabs = NSStackView()
+    private var overflow = NSButton()
+
+    /// Shows as many tabs as fit, in order. The rest stay reachable through the » menu.
+    override func layout() {
+        super.layout()
+        guard let header = tabs.superview as? NSStackView else { return }
+        let others = header.arrangedSubviews.filter { $0 !== tabs && $0 !== overflow }
+        let room = header.frame.width - header.edgeInsets.left - header.edgeInsets.right
+            - others.reduce(0) { $0 + $1.fittingSize.width + header.spacing }
+        let widths = tabButtons.map(\.fittingSize.width)
+        let everything = widths.reduce(0, +) + tabs.spacing * CGFloat(max(widths.count - 1, 0))
+        var left = everything <= room ? room : room - overflow.fittingSize.width - header.spacing
+        // The open tab always stays visible.
+        if let index = tabButtons.firstIndex(where: { $0.tag == selected.rawValue }) { left -= widths[index] + tabs.spacing }
+        var hiding = false
+        for (button, width) in zip(tabButtons, widths) {
+            let isOpen = button.tag == selected.rawValue
+            if !isOpen, width > left { hiding = true }
+            if button.isHidden != (hiding && !isOpen) { button.isHidden = hiding && !isOpen }
+            if !isOpen { left -= width + tabs.spacing }
+        }
+        if overflow.isHidden == hiding { overflow.isHidden = !hiding }
+        needsDisplay = true   // the underline follows its tab
+    }
+
+    @objc private func showOverflowMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for tab in Tab.allCases {
+            let item = ActionItem(title: tab.title) { [weak self] in self?.show(tab) }
+            item.state = tab == selected ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY), in: sender)
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -32,8 +67,14 @@ final class BottomPanel: NSView {
         }
         let clear = FileTreeView.iconButton("trash", "Clear", #selector(clearCurrent), self)
         let hide = FileTreeView.iconButton("xmark", "Hide Panel", #selector(hideClicked), self)
-        let header = NSStackView(views: tabButtons + [NSView(), clear, hide])
-        header.spacing = 16
+        // In a narrow window the tabs that don't fit move to the » menu.
+        tabs.setViews(tabButtons, in: .leading)
+        tabs.spacing = 14
+        tabs.setClippingResistancePriority(.defaultLow, for: .horizontal)
+        tabs.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        overflow = FileTreeView.iconButton("chevron.right.2", "More tabs", #selector(showOverflowMenu(_:)), self)
+        let header = NSStackView(views: [tabs, overflow, clear, hide])
+        header.spacing = 10
         header.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 10)
 
         for view in [header, content] {
@@ -85,6 +126,7 @@ final class BottomPanel: NSView {
                 .foregroundColor: tab == selected ? NSColor.labelColor : NSColor.secondaryLabelColor,
             ])
         }
+        needsLayout = true   // titles and the open tab decide which tabs fit
     }
 
     @objc private func tabClicked(_ sender: NSButton) { show(Tab(rawValue: sender.tag)!) }

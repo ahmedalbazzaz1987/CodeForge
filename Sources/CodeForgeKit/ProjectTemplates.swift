@@ -135,6 +135,7 @@ public enum ProjectTemplates {
             id: "c", name: "C Console App", summary: "A C17 program built with clang.",
             tags: "C", symbol: "c.square",
             files: [
+                "compile_flags.txt": "-std=c17\n-Wall\n",
                 "main.c": """
                     #include <stdio.h>
 
@@ -151,6 +152,7 @@ public enum ProjectTemplates {
             id: "cpp", name: "C++ Console App", summary: "A C++20 program built with clang++.",
             tags: "C++", symbol: "plus.square",
             files: [
+                "compile_flags.txt": "-std=c++20\n-Wall\n",
                 "main.cpp": """
                     #include <iostream>
                     #include <string>

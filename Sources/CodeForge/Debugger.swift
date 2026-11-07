@@ -369,13 +369,17 @@ final class DebugPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate, 
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        for (id, title, width) in [("name", "Name", 160.0), ("value", "Value", 220.0), ("type", "Type", 120.0)] {
+        // All three columns share the width, so Value stays visible in a narrow window.
+        for (id, title, width) in [("name", "Name", 120.0), ("value", "Value", 170.0), ("type", "Type", 80.0)] {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
             column.title = title
             column.width = width
+            column.minWidth = 50
+            column.resizingMask = [.autoresizingMask, .userResizingMask]
             locals.addTableColumn(column)
             if id == "name" { locals.outlineTableColumn = column }
         }
+        locals.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         locals.style = .plain
         locals.rowHeight = 19
         locals.usesAlternatingRowBackgroundColors = true
@@ -407,6 +411,9 @@ final class DebugPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate, 
         split.dividerStyle = .thin
         split.addArrangedSubview(localsScroll)
         split.addArrangedSubview(stackScroll)
+        split.setHoldingPriority(.init(249), forSubviewAt: 0)   // the variables get the extra width
+        stackScroll.widthAnchor.constraint(equalToConstant: 220).withPriority(.init(255)).isActive = true
+        stackScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         result.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         result.textColor = Theme.accent
         result.lineBreakMode = .byTruncatingTail
@@ -435,6 +442,11 @@ final class DebugPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate, 
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        locals.sizeToFit()   // all columns inside the panel, however wide it is
+    }
 
     func show(frames: [DebugSession.Frame], selected: Int, variables: [Variable]) {
         self.frames = frames
@@ -580,5 +592,12 @@ final class DebugBar: NSView {
         bounds.fill()
         Theme.statusBusy.setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 2).fill()
+    }
+}
+
+private extension NSLayoutConstraint {
+    func withPriority(_ priority: NSLayoutConstraint.Priority) -> NSLayoutConstraint {
+        self.priority = priority
+        return self
     }
 }

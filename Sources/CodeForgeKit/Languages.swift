@@ -57,7 +57,10 @@ public enum Languages {
                 infer is as satisfies any unknown never string number boolean symbol bigint object
                 """,
             patterns: [atAttribute],
-            runCommand: "npx --yes tsx {file}", installHint: "Install Node.js with `brew install node` (tsx is fetched by npx)."
+            // tsx only strips types, so check them first. Mistakes go to the Error List and the program still runs, as
+            // it would with tsx alone. Node's own names (process, require, node:fs…) aren't type errors in a lone file.
+            runCommand: "npx --yes -p typescript tsc --noEmit --skipLibCheck --esModuleInterop --target es2022 --module esnext --moduleResolution bundler {file} | grep -vE 'TS(2307|2580|2584|2591|2688|2503|7016)'; npx --yes tsx {file}",
+            installHint: "Install Node.js with `brew install node` (tsx is fetched by npx)."
         ),
         Language(
             id: "c", name: "C", extensions: ["c", "h"],

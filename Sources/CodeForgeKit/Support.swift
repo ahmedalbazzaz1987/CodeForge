@@ -72,3 +72,50 @@ public enum FuzzyMatch {
         return qi == q.count ? score * 100 - c.count : nil
     }
 }
+
+/// Which program a command or project template needs, so CodeForge can say it's missing before anything fails.
+public enum ToolRequirement {
+    /// The program a shell command starts with: "npx --yes tsx a.ts" needs npx, "{ dotnet new …" needs dotnet.
+    public static func tool(ofCommand command: String) -> String? {
+        for word in command.split(whereSeparator: \.isWhitespace) where word != "{" && word != "(" && !word.contains("=") {
+            return String(word)
+        }
+        return nil
+    }
+
+    /// The program a New Project template needs to be created and run.
+    public static func tool(for template: ProjectTemplate) -> String? {
+        if let command = template.command ?? template.runCommand { return tool(ofCommand: command) }
+        return Languages.forFile(named: (template.mainFile as NSString).lastPathComponent).runCommand.flatMap(tool(ofCommand:))
+    }
+
+    /// What to tell someone who doesn't have the program.
+    public static func installHint(for tool: String) -> String {
+        if let language = Languages.all.first(where: { $0.runCommand.flatMap(self.tool(ofCommand:)) == tool }), let hint = language.installHint { return hint }
+        return switch tool {
+        case "cargo": "Install Rust with `brew install rust`."
+        case "npm", "npx": "Install Node.js with `brew install node`."
+        case "dotnet": "Install the .NET SDK with `brew install dotnet`."
+        case "cmake": "Install CMake with `brew install cmake`."
+        default: "Install \(tool) and try again."
+        }
+    }
+
+    /// A readable name for messages: "the Java runtime", "Rust"…
+    public static func displayName(for tool: String) -> String {
+        switch tool {
+        case "java", "javac": "Java (a JDK)"
+        case "go": "Go"
+        case "rustc", "cargo": "Rust"
+        case "node", "npm", "npx": "Node.js"
+        case "dotnet": "The .NET SDK"
+        case "python3": "Python"
+        case "kotlinc": "Kotlin"
+        case "ruby": "Ruby"
+        case "php": "PHP"
+        case "lua": "Lua"
+        case "clang", "clang++": "The C and C++ compiler"
+        default: tool
+        }
+    }
+}

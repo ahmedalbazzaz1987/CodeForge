@@ -373,3 +373,94 @@ final class NavigationTests: XCTestCase {
         XCTAssertNil(history.goForward(from: "z"))
     }
 }
+
+final class OutputDecodingTests: XCTestCase {
+    func testClassifiesLinesByContent() {
+        for line in ["main.c:3:1: error: expected ';'", "Program.vb(6,27): error BC30451: 'totl' is not declared.", "error: linking failed", "error[E0308]: mismatched types",
+                     "Traceback (most recent call last):", "ValueError: bad value", "Swift/Array.swift:175: Fatal error: Index out of range", "panic: boom", "zsh: command not found: go", "Build FAILED."] {
+            XCTAssertEqual(OutputClassifier.kind(of: line), .error, line)
+        }
+        for line in ["main.c:3:1: warning: unused variable", "warning: unused import", "npm WARN deprecated x"] {
+            XCTAssertEqual(OutputClassifier.kind(of: line), .warning, line)
+        }
+        for line in ["Building for debugging...", "Build complete! (0.5s)", "[3/4] Compiling main.swift", "No errors found", "Hello, error handling", "0 Error(s)", "Build succeeded."] {
+            XCTAssertEqual(OutputClassifier.kind(of: line), .normal, line)
+        }
+    }
+
+    func testDecodesLinesPromptsAndSplitCharacters() {
+        var decoder = OutputDecoder()
+        XCTAssertEqual(decoder.append(Array("one\nerror: two\n".utf8)), [.init(text: "one\n", kind: .normal), .init(text: "error: two\n", kind: .error)])
+        // A prompt with no line break shows right away.
+        XCTAssertEqual(decoder.append(Array("Name? ".utf8)), [.init(text: "Name? ", kind: .normal)])
+        XCTAssertEqual(decoder.append(Array("\n".utf8)), [.init(text: "\n", kind: .normal)])
+        // An Arabic letter split between two reads stays whole.
+        let letter = Array("م".utf8)
+        XCTAssertEqual(decoder.append([letter[0]]), [])
+        XCTAssertEqual(decoder.append([letter[1]]), [.init(text: "م", kind: .normal)])
+        XCTAssertEqual(decoder.append(Array("\r\nnext\rover\n".utf8)), [.init(text: "\n", kind: .normal), .init(text: "over\n", kind: .normal)])
+        XCTAssertEqual(decoder.append(Array("end".utf8)), [.init(text: "end", kind: .normal)])
+        XCTAssertEqual(decoder.finish(), [])
+    }
+}
+
+final class DiagnosticMergeTests: XCTestCase {
+    func testListsTheSameProblemOnce() {
+        let folder = URL(fileURLWithPath: "/project")
+        let fromBuild = Diagnostic(severity: .error, message: "expected ';' after expression", file: "main.c", line: 4, column: 9)
+        let fromServer = Diagnostic(severity: .error, message: "Expected ';' after expression (fix available)", file: "/project/main.c", line: 4, column: 9, endLine: 4, endColumn: 10)
+        let other = Diagnostic(severity: .warning, message: "unused variable 'x'", file: "main.c", line: 2)
+        let merged = DiagnosticMerge.merged(run: [fromBuild, other], live: [fromServer], folder: folder)
+        XCTAssertEqual(merged.count, 2)
+        XCTAssertEqual(merged.filter { $0.severity == .error }, [fromBuild])
+        // clangd reports a missing ';' on the next line.
+        let nextLine = Diagnostic(severity: .error, message: "Expected ';' after expression (fix available)", file: "/project/main.c", line: 5, column: 1)
+        XCTAssertEqual(DiagnosticMerge.merged(run: [fromBuild], live: [nextLine], folder: folder), [fromBuild])
+        // Two languages-server problems on neighboring lines are both real.
+        let neighbor = Diagnostic(severity: .error, message: "Unknown type name 'foo'", file: "/project/main.c", line: 6)
+        let neighbor2 = Diagnostic(severity: .error, message: "Unknown type name 'foo'", file: "/project/main.c", line: 7)
+        XCTAssertEqual(DiagnosticMerge.merged(run: [], live: [neighbor, neighbor2], folder: folder).count, 2)
+        // Different lines are different problems.
+        let elsewhere = Diagnostic(severity: .error, message: "expected ';' after expression", file: "main.c", line: 9)
+        XCTAssertEqual(DiagnosticMerge.merged(run: [fromBuild, elsewhere], live: [], folder: folder).count, 2)
+    }
+}
+
+final class ToolRequirementTests: XCTestCase {
+    func testFindsTheProgramACommandNeeds() {
+        XCTAssertEqual(ToolRequirement.tool(ofCommand: "npx --yes tsx a.ts"), "npx")
+        XCTAssertEqual(ToolRequirement.tool(ofCommand: "{ dotnet new list maui | grep x; } && dotnet new maui"), "dotnet")
+        let templates = Dictionary(uniqueKeysWithValues: ProjectTemplates.all.map { ($0.id, $0) })
+        XCTAssertEqual(ToolRequirement.tool(for: templates["java"]!), "java")
+        XCTAssertEqual(ToolRequirement.tool(for: templates["go"]!).map { ["go", "go run ."].contains($0) }, true)
+        XCTAssertEqual(ToolRequirement.tool(for: templates["vb-console"]!), "dotnet")
+        XCTAssertTrue(ToolRequirement.installHint(for: "java").contains("brew install"))
+        XCTAssertTrue(ToolRequirement.installHint(for: "cargo").contains("rust"))
+    }
+
+    func testToolboxAndSnippetsCoverCompiledLanguages() {
+        for language in ["c", "cpp", "java", "go", "rust"] {
+            XCTAssertFalse(ToolboxCatalog.groups(forLanguage: language).isEmpty, language)
+            XCTAssertFalse(SnippetLibrary().snippets(forLanguage: language).isEmpty, language)
+        }
+        XCTAssertEqual(ToolboxCatalog.groups(forLanguage: "typescript").first?.name, "TypeScript Snippets")
+        XCTAssertEqual(Set(BuiltInSnippets.all.map(\.id)).count, BuiltInSnippets.all.count)
+    }
+}
+
+final class OutputProgressTests: XCTestCase {
+    private func decode(_ text: String) -> String {
+        var decoder = OutputDecoder()
+        let pieces = decoder.append(Array(text.utf8)) + decoder.finish()
+        return pieces.map(\.text).joined()
+    }
+
+    func testRewrittenLinesKeepOnlyTheLastVersion() {
+        XCTAssertEqual(decode("Counting 1%\rCounting 50%\rCounting 100%, done.\r\nNext\r\n"), "Counting 100%, done.\nNext\n")
+    }
+
+    func testSwiftPMStepCounterIsHiddenButProgramOutputIsNot() {
+        XCTAssertEqual(decode("[1\u{2009}/\u{2009}3]\r\n[2\u{2009}/\u{2009}3] App-product\r\nBuild complete!\r\n"), "Build complete!\n")
+        XCTAssertEqual(decode("[1/3] mine\n"), "[1/3] mine\n")
+    }
+}

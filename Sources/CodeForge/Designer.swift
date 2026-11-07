@@ -136,7 +136,7 @@ final class ToolboxView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate,
         }
         empty.stringValue = language == nil
             ? "Open a file to see its controls and snippets."
-            : "There are no usable controls in this group for \(language!.name) files. Open an HTML, Razor, C#, VB.NET, Swift, Python or JavaScript file."
+            : "There are no Toolbox items for \(language!.name) files yet."
         filter()
     }
 

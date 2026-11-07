@@ -357,6 +357,8 @@ final class NewProjectSheet: NSObject, NSTableViewDataSource, NSTableViewDelegat
         UserDefaults.standard.set(location.path, forKey: "newProjectLocation")
         let template = ProjectTemplates.all[table.selectedRow]
         window.sheetParent?.endSheet(window)
-        onCreate(template, name, location)
+        // Let the sheet close first: opening a project does a lot, and the button shouldn't hang while it does.
+        let onCreate = onCreate
+        DispatchQueue.main.async { onCreate(template, name, location) }
     }
 }

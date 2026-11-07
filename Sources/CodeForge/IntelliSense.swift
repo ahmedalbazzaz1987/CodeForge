@@ -34,10 +34,23 @@ final class LanguageSession {
         self.server = server
         self.url = url
         let languageId = LanguageServerSpecs.languageId(forLanguage: document.language.id, fileExtension: url.pathExtension)
+        tellClangdTheStandard(for: document.language.id)
         server.notify("textDocument/didOpen", ["textDocument": [
             "uri": uri, "languageId": languageId, "version": version, "text": document.textView.string,
         ]])
         server.whenReady { [weak server] in server?.pullDiagnostics(for: url) }
+    }
+
+    /// Without a compile database clangd assumes an old C++ standard and reports errors the compiler doesn't.
+    /// Give it the same standard that Start and Build use (compile_flags.txt or compile_commands.json take priority).
+    private func tellClangdTheStandard(for language: String) {
+        guard server.spec.id == "clangd", let (compiler, standard) = ["cpp": ("clang++", "-std=c++20"), "c": ("clang", "-std=c17")][language] else { return }
+        let folders = [url.deletingLastPathComponent(), server.root]
+        let names = ["compile_commands.json", "compile_flags.txt", "build/compile_commands.json", ".clangd"]
+        if folders.contains(where: { folder in names.contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) } }) { return }
+        server.notify("workspace/didChangeConfiguration", ["settings": ["compilationDatabaseChanges": [
+            url.path: ["workingDirectory": url.deletingLastPathComponent().path, "compilationCommand": [compiler, standard, url.path]],
+        ]]])
     }
 
     var triggerCharacters: Set<String> { server.triggerCharacters }

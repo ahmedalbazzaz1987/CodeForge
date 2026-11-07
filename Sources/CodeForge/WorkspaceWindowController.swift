@@ -98,6 +98,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private var runFolder: URL?
     private var pendingClone: URL?
     private var didPlaceDividers = false
+    private var isKeepingEditorUsable = false
 
     private let defaults = UserDefaults.standard
     private var fontSize: CGFloat {
@@ -276,6 +277,31 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         place(explorerPane, width: explorerWidth)
         if !panel.isHidden { innerSplit.setPosition(innerSplit.bounds.height - panelHeight, ofDividerAt: 0) }
         if !properties.isHidden { explorerPane.setPosition(explorerPane.bounds.height - propertiesHeight, ofDividerAt: 0) }
+        keepEditorUsable()
+    }
+
+    /// In a small window the side panes and the bottom panel give way, so the code always has room.
+    /// The sizes the user chose stay saved for when the window is bigger again.
+    private func keepEditorUsable() {
+        isKeepingEditorUsable = true
+        defer { isKeepingEditorUsable = false }
+        let width = outerSplit.bounds.width, height = innerSplit.bounds.height
+        guard width > 0, height > 0 else { return }
+        if innerSplit.frame.width < 520 {
+            let room = max(width - 520, 0)
+            let sides = [toolPane, explorerPane].filter { !$0.isHidden }
+            for side in sides { place(side, width: max(room / CGFloat(sides.count), 160)) }
+        }
+        if !panel.isHidden, innerSplit.arrangedSubviews[0].frame.height < height * 0.55 {
+            innerSplit.setPosition((height * 0.55).rounded(), ofDividerAt: 0)
+        }
+        if !properties.isHidden, sidebar.frame.height < explorerPane.bounds.height * 0.45 {
+            explorerPane.setPosition((explorerPane.bounds.height * 0.45).rounded(), ofDividerAt: 0)
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        if didPlaceDividers { keepEditorUsable() }
     }
 
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
@@ -293,7 +319,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
-        guard didPlaceDividers else { return }
+        guard didPlaceDividers, !isKeepingEditorUsable else { return }
         if !toolPane.isHidden { defaults.set(Double(toolPane.frame.width), forKey: "toolboxWidth") }
         if !properties.isHidden, !explorerPane.isHidden { defaults.set(Double(properties.frame.height), forKey: "propertiesHeight") }
         if !explorerPane.isHidden { defaults.set(Double(explorerPane.frame.width), forKey: "explorerWidth") }
@@ -416,6 +442,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         console.onInput = { [weak self] line in
             guard let self else { return }
+            guard runner.isRunning else {
+                runStatus.stringValue = "No program is running to receive input"
+                return NSSound.beep()
+            }
             console.append(line + "\n", .input)
             runner.send(line)
         }
@@ -545,6 +575,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     func setWorkspace(_ url: URL?) {
+        // Like closing a solution in Visual Studio: the old project's tabs, errors and output go with it.
+        if let previous = workspaceURL?.standardizedFileURL, previous != url?.standardizedFileURL {
+            guard closeProject(at: previous) else { return }
+        }
         workspaceURL = url
         explorer.setRoot(url)
         documents.forEach(attachLanguageServer)
@@ -557,6 +591,37 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         refreshChrome()
         saveSession()
+    }
+
+    /// Closes the tabs of a project (asking about unsaved ones first) and clears what it left behind.
+    /// Returns false if the user cancelled, which leaves everything as it was.
+    private func closeProject(at folder: URL) -> Bool {
+        let inside = documents.filter { $0.url?.standardizedFileURL.path.hasPrefix(folder.path + "/") == true }
+        for document in inside where document.isDirty {
+            if let index = documents.firstIndex(where: { $0 === document }) { select(index) }
+            guard confirmDiscard(document) else { return false }
+        }
+        debugSession?.stop()
+        runner.stop()
+        let remaining = current.flatMap { selected in inside.contains { $0 === selected } ? nil : selected }
+        for document in inside {
+            document.session = nil
+            designHosts[ObjectIdentifier(document)] = nil
+        }
+        documents.removeAll { document in inside.contains { $0 === document } }
+        selectedIndex = -1
+        let kept = Set(documents.compactMap { $0.url?.standardizedFileURL })
+        liveDiagnostics = liveDiagnostics.filter { kept.contains($0.key) }
+        runDiagnostics = []
+        runFolder = nil
+        console.clear(nil)
+        runStatus.stringValue = ""
+        panel.references.set(title: "", [])
+        panel.findResults.set(summary: nil, matches: [])
+        panel.taskList.set(summary: nil, matches: [])
+        refreshDiagnostics()
+        select(remaining.flatMap { selected in documents.firstIndex { $0 === selected } } ?? (documents.isEmpty ? -1 : documents.count - 1))
+        return true
     }
 
     private func makeDocument(url: URL?, text: String, name customName: String? = nil) -> EditorDocument {
@@ -747,15 +812,13 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     private func refreshDiagnostics() {
         let live = liveDiagnostics.values.flatMap { $0 }
         let folder = runFolder ?? workspaceURL ?? FileManager.default.homeDirectoryForCurrentUser
-        // A build error that the language server also reports is listed once.
-        let liveKeys = Set(live.map { "\($0.url(relativeTo: folder).standardizedFileURL.path):\($0.line):\($0.message.lowercased())" })
-        let fromRunOnly = runDiagnostics.filter { !liveKeys.contains("\($0.url(relativeTo: folder).standardizedFileURL.path):\($0.line):\($0.message.lowercased())") }
-        panel.errors.set(fromRunOnly + live, folder: folder)
+        panel.errors.set(DiagnosticMerge.merged(run: runDiagnostics, live: live, folder: folder), folder: folder)
         panel.updateTabTitles()
         for document in documents {
             guard let url = document.url?.standardizedFileURL else { continue }
-            let fromRun = runDiagnostics.filter { $0.url(relativeTo: folder).standardizedFileURL == url }
-            document.setDiagnostics(fromRun + (liveDiagnostics[url] ?? []))
+            let path = url.resolvingSymlinksInPath().path
+            let fromRun = runDiagnostics.filter { DiagnosticMerge.path(of: $0, in: folder) == path }
+            document.setDiagnostics(DiagnosticMerge.merged(run: fromRun, live: liveDiagnostics[url] ?? [], folder: folder))
         }
     }
 
@@ -765,9 +828,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard documents.indices.contains(index) else { return true }
         guard confirmDiscard(documents[index]) else { return false }
         documents[index].session = nil
+        if let url = documents[index].url?.standardizedFileURL { liveDiagnostics[url] = nil }
         documents.remove(at: index)
         if index < selectedIndex || selectedIndex >= documents.count { selectedIndex -= 1 }
         select(selectedIndex)
+        refreshDiagnostics()
         saveSession()
         return true
     }
@@ -804,6 +869,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             try document.write()
             if let url = document.url { ProjectIndex.shared.update(url, text: document.textView.string) }
             if panel.selected == .taskList { refreshTaskList() }
+            if document === current { updateProperties() }   // size and date changed
             git.refresh()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self, weak document] in
                 if let document { self?.updateCodeLens(document) }
@@ -1053,13 +1119,16 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     @objc func runActiveFile(_ sender: Any?) {
         if let key = customCommandKey, let command = defaults.string(forKey: key), !command.isEmpty, let folder = workspaceURL {
             saveAllDocuments(nil)
-            return start(command, in: folder)
+            start(command, in: folder)
+            return console.focusInput()
         }
         // Like Visual Studio's startup project: Start runs the whole project when the file belongs to it.
         if let plan = projectRunPlan, let run = plan.run {
             saveAllDocuments(nil)
             runningLanguage = nil
-            return start(run, in: URL(fileURLWithPath: plan.folder))
+            guard toolIsInstalled(for: run) else { return }
+            start(run, in: URL(fileURLWithPath: plan.folder))
+            return console.focusInput()
         }
         guard let document = current else {
             return Prompt.show("Nothing to run", message: "Open a file, or choose Run ▸ Set Run Command… to run a command for this folder.")
@@ -1070,10 +1139,24 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             return Prompt.show("CodeForge doesn't know how to run \(document.language.name) files",
                                message: "Choose Run ▸ Set Run Command… to enter the command for this folder.")
         }
+        guard toolIsInstalled(for: template) else { return }
         let output = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "CodeForge").appendingPathComponent("build")
         try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         start(CommandTemplate.expand(template, file: file, outputDirectory: output), in: file.deletingLastPathComponent())
+        console.focusInput()   // a program may ask for input, and Return shouldn't go to the editor
+    }
+
+    /// Says what to install, instead of running a command that can only fail.
+    private func toolIsInstalled(for command: String) -> Bool {
+        guard let tool = ToolRequirement.tool(ofCommand: command), !ToolCheck.isAvailable(tool) else { return true }
+        let name = ToolRequirement.displayName(for: tool)
+        setConsoleVisible(true)
+        panel.show(.output)
+        console.clear(nil)
+        console.append("\(name) isn't installed, so this can't run yet.\n\(ToolRequirement.installHint(for: tool))\n", .error)
+        runStatus.stringValue = "\(name) isn't installed"
+        return false
     }
 
     private var runningLanguage: Language?
@@ -1118,6 +1201,17 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     private func runFinished(status: Int32, seconds: TimeInterval) {
         let time = String(format: "%.2fs", seconds)
+        // The program no longer needs input: typing goes back to the code.
+        if console.isWaitingInInput, let editor = current?.textView { window?.makeFirstResponder(editor) }
+        if runner.wasStopped {
+            console.append("\n[Stopped after \(time)]\n", .info)
+            isRunning = false
+            afterBuild = nil
+            pendingClone = nil
+            pendingInstall = nil
+            runStatus.stringValue = "Stopped"
+            return updateRunChrome()
+        }
         console.append("\n[Finished with exit code \(status) in \(time)]\n", status == 0 ? .info : .error)
         if status == 127, let hint = runningLanguage?.installHint {
             console.append("A required tool wasn't found. \(hint)\n", .info)
@@ -1129,7 +1223,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         let errorCount = diagnostics.filter { $0.severity == .error }.count
         if status != 0, errorCount > 0 { panel.show(.errors) }
         if status == 0 {
-            runStatus.stringValue = "Finished in \(time)"
+            // A run can succeed with problems listed (TypeScript still runs after a type error).
+            runStatus.stringValue = "Finished in \(time)" + (errorCount > 0 ? " — \(errorCount) error\(errorCount == 1 ? "" : "s") in the Error List" : "")
         } else {
             runStatus.stringValue = errorCount > 0 ? "Failed — \(errorCount) error\(errorCount == 1 ? "" : "s")" : "Failed (exit code \(status))"
         }
@@ -1174,6 +1269,12 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard let window else { return }
         NewProjectSheet { [weak self] template, name, location in
             guard let self else { return }
+            if let tool = ToolRequirement.tool(for: template), !ToolCheck.isAvailable(tool) {
+                let name = ToolRequirement.displayName(for: tool)
+                guard Prompt.confirm("\(name) isn't installed",
+                                     message: "This project needs it to run. \(ToolRequirement.installHint(for: tool))\n\nYou can create the project now and install it later.",
+                                     button: template.command != nil ? "Try Anyway" : "Create Anyway") else { return }
+            }
             if let command = ProjectTemplates.creationCommand(for: template, named: name) {
                 // .NET templates come from `dotnet new`; open the project once it has been created.
                 let folder = location.appendingPathComponent(name)
@@ -1387,6 +1488,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard let plan = buildPlan() else {
             return Prompt.show("Nothing to build", message: "Open a project folder or a source file, or set a build command with Build ▸ Set Build Command….")
         }
+        guard toolIsInstalled(for: plan.build) else { return }
         afterBuild = next
         start(plan.build, in: URL(fileURLWithPath: plan.folder))
         runStatus.stringValue = "Building \(plan.name)…"
@@ -1896,6 +1998,20 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     }
 
     #if DEBUG
+    func debugSendInput(_ line: String) {
+        console.append(line + "\n", .input)
+        runner.send(line)
+    }
+
+    func debugShowDebugTab() { showPanelTab(.debug) }
+
+    func debugDump() {
+        print("--- FRAMES: \(console.debugFrames)")
+        print("--- OUTPUT ---\n\(console.text)\n--- STATUS: \(runStatus.stringValue)")
+        print("--- ERRORS: \(panel.errors.diagnostics.map { "\(($0.file as NSString).lastPathComponent):\($0.line) \($0.message)" })")
+        print("--- TABS: \(documents.map(\.displayName)) focus: \(window?.firstResponder.map { String(describing: type(of: $0)) } ?? "none")")
+    }
+
     func debugShowTable(_ table: String) {
         guard let connection = toolPane.servers.connections.first else { return print("TABLE: no connection") }
         showServerExplorer(nil)

@@ -43,11 +43,81 @@ public enum ToolboxCatalog {
         case "vb": [vb]
         case "swift": [swiftUI, swift]
         case "python": [python]
-        case "javascript", "typescript": [javascript]
+        case "javascript": [javascript]
+        case "typescript": [typescript, javascript]
+        case "c": [c]
+        case "cpp": [cpp, c]
+        case "java": [java]
+        case "go": [go]
+        case "rust": [rust]
         case "css": [css]
         default: []
         }
     }
+
+    static let c = ToolboxGroup(name: "C Snippets", items: [
+        ToolboxItem("main", "play", "#include <stdio.h>\n\nint main(void) {\n    $0\n    return 0;\n}"),
+        ToolboxItem("Function", "function", "int $0name(void) {\n    return 0;\n}"),
+        ToolboxItem("Struct", "square.stack.3d.up", "typedef struct {\n    int $0value;\n} Name;"),
+        ToolboxItem("if", "arrow.triangle.branch", "if ($0condition) {\n    \n}"),
+        ToolboxItem("for loop", "repeat", "for (int i = 0; i < $0count; i++) {\n    \n}"),
+        ToolboxItem("while loop", "repeat", "while ($0condition) {\n    \n}"),
+        ToolboxItem("switch", "arrow.triangle.branch", "switch ($0value) {\ncase 1:\n    break;\ndefault:\n    break;\n}"),
+        ToolboxItem("printf", "text.alignleft", "printf(\"$0\\n\");"),
+        ToolboxItem("malloc", "memorychip", "int *items = malloc($0count * sizeof *items);\nif (items == NULL) {\n    return 1;\n}\nfree(items);"),
+    ])
+
+    static let cpp = ToolboxGroup(name: "C++ Snippets", items: [
+        ToolboxItem("main", "play", "#include <iostream>\n\nint main() {\n    $0\n    return 0;\n}"),
+        ToolboxItem("Class", "c.square", "class $0Name {\npublic:\n    Name() = default;\n\nprivate:\n    int value_ = 0;\n};"),
+        ToolboxItem("Range for", "repeat", "for (const auto& item : $0items) {\n    \n}"),
+        ToolboxItem("cout", "text.alignleft", "std::cout << $0 << std::endl;"),
+        ToolboxItem("vector", "list.bullet", "std::vector<int> $0values;"),
+        ToolboxItem("unique_ptr", "shield", "auto $0item = std::make_unique<Type>();"),
+        ToolboxItem("try…catch", "exclamationmark.shield", "try {\n    $0\n} catch (const std::exception& error) {\n    std::cerr << error.what() << std::endl;\n}"),
+        ToolboxItem("Lambda", "function", "auto $0name = [&](int value) {\n    return value;\n};"),
+    ])
+
+    static let java = ToolboxGroup(name: "Java Snippets", items: [
+        ToolboxItem("main", "play", "public static void main(String[] args) {\n    $0\n}"),
+        ToolboxItem("Class", "c.square", "public class $0Name {\n    \n}"),
+        ToolboxItem("Method", "function", "public void $0name() {\n    \n}"),
+        ToolboxItem("Record", "square.stack.3d.up", "public record $0Name(String value) {}"),
+        ToolboxItem("if", "arrow.triangle.branch", "if ($0condition) {\n    \n}"),
+        ToolboxItem("for each", "repeat", "for (var item : $0items) {\n    \n}"),
+        ToolboxItem("try…catch", "exclamationmark.shield", "try {\n    $0\n} catch (Exception error) {\n    error.printStackTrace();\n}"),
+        ToolboxItem("println", "text.alignleft", "System.out.println($0);"),
+        ToolboxItem("ArrayList", "list.bullet", "var $0items = new java.util.ArrayList<String>();"),
+    ])
+
+    static let typescript = ToolboxGroup(name: "TypeScript Snippets", items: [
+        ToolboxItem("Interface", "i.square", "interface $0Name {\n    id: number;\n}"),
+        ToolboxItem("Type", "t.square", "type $0Name = {\n    id: number;\n};"),
+        ToolboxItem("Enum", "list.number", "enum $0Name {\n    First,\n    Second,\n}"),
+        ToolboxItem("Class", "c.square", "class $0Name {\n    constructor(private readonly id: number) {}\n}"),
+        ToolboxItem("Typed function", "function", "function $0name(value: string): string {\n    return value;\n}"),
+        ToolboxItem("Generic function", "function", "function $0name<T>(value: T): T {\n    return value;\n}"),
+        ToolboxItem("Async function", "clock", "async function $0name(): Promise<void> {\n    \n}"),
+    ])
+
+    static let go = ToolboxGroup(name: "Go Snippets", items: [
+        ToolboxItem("main", "play", "func main() {\n\t$0\n}"),
+        ToolboxItem("Function", "function", "func $0name() error {\n\treturn nil\n}"),
+        ToolboxItem("Struct", "square.stack.3d.up", "type $0Name struct {\n\tID int\n}"),
+        ToolboxItem("if err", "exclamationmark.shield", "if err != nil {\n\treturn $0err\n}"),
+        ToolboxItem("for range", "repeat", "for _, item := range $0items {\n\t\n}"),
+        ToolboxItem("Println", "text.alignleft", "fmt.Println($0)"),
+    ])
+
+    static let rust = ToolboxGroup(name: "Rust Snippets", items: [
+        ToolboxItem("main", "play", "fn main() {\n    $0\n}"),
+        ToolboxItem("Function", "function", "fn $0name() -> i32 {\n    0\n}"),
+        ToolboxItem("Struct", "square.stack.3d.up", "struct $0Name {\n    id: u32,\n}"),
+        ToolboxItem("impl", "c.square", "impl $0Name {\n    fn new() -> Self {\n        Self {}\n    }\n}"),
+        ToolboxItem("match", "arrow.triangle.branch", "match $0value {\n    Some(item) => {}\n    None => {}\n}"),
+        ToolboxItem("for", "repeat", "for item in $0items.iter() {\n    \n}"),
+        ToolboxItem("println!", "text.alignleft", "println!(\"{}\", $0);"),
+    ])
 
     static let html = ToolboxGroup(name: "HTML", items: [
         ToolboxItem("Button", "rectangle.and.hand.point.up.left", #"<button type="button">$0Button</button>"#),

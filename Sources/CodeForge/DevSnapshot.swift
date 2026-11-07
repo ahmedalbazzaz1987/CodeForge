@@ -24,7 +24,13 @@ enum DevSnapshot {
         var delay = Double(env["CF_DELAY"] ?? "") ?? 1.5
         if env["CF_RUN"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { controller.runActiveFile(nil) }
-            delay = 5
+            delay = max(delay, 5)
+        }
+        if let size = env["CF_WINDOW"]?.split(separator: "x").compactMap({ Double($0) }), size.count == 2 {
+            controller.window?.setContentSize(NSSize(width: size[0], height: size[1]))
+        }
+        if let line = env["CF_INPUT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (Double(env["CF_INPUT_AT"] ?? "") ?? 2)) { controller.debugSendInput(line) }
         }
         if let line = env["CF_BREAK"].flatMap(Int.init) {
             // Set a breakpoint on a line of the open file.
@@ -65,6 +71,16 @@ enum DevSnapshot {
                 for character in text {
                     if character == "\t" { textView.doCommand(by: #selector(NSResponder.insertTab(_:))) } else { textView.insertText(String(character), replacementRange: textView.selectedRange()) }
                 }
+            }
+        }
+        if env["CF_DEBUG_TAB"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { controller.debugShowDebugTab() }
+        }
+        if let target = env["CF_SWITCH"] {
+            // Open another project folder after a moment: "path@seconds".
+            let parts = target.components(separatedBy: "@")
+            DispatchQueue.main.asyncAfter(deadline: .now() + (Double(parts.last ?? "") ?? 2)) {
+                controller.setWorkspace(URL(fileURLWithPath: parts[0]))
             }
         }
         if let actions = env["CF_ACTIONS"] {
@@ -127,6 +143,7 @@ enum DevSnapshot {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             if let textView = find(controller.window!.contentView!, CodeTextView.self) { print("LENSES:", textView.lenses) }
+            if env["CF_DUMP"] != nil { controller.debugDump() }
             // Any other visible window (a sheet, Options) is saved next to the main image.
             for (index, extra) in NSApp.windows.enumerated() where extra !== controller.window && extra.isVisible {
                 guard let view = extra.contentView?.superview ?? extra.contentView,
