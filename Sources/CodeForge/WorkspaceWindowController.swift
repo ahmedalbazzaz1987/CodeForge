@@ -1629,12 +1629,16 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             return chooseDebugProgram(thenStart: true)
         }
         let folder = workspaceURL ?? URL(fileURLWithPath: path).deletingLastPathComponent()
+        let isGo = current?.language.id == "go" || buildPlan()?.languages.contains("go") == true
+        if isGo, let configuration = DebugConfiguration.delve(program: URL(fileURLWithPath: path), folder: folder) {
+            return startSession(configuration, title: path)
+        }
         guard let configuration = DebugConfiguration.lldb(program: URL(fileURLWithPath: path), folder: folder) else {
             return Prompt.show("Couldn't start the debugger", message: "CodeForge uses lldb-dap from Xcode. Install Xcode, then run: xcode-select -s /Applications/Xcode.app")
         }
         startSession(configuration, title: path)
         if current?.language.id == "go" {
-            console.append("LLDB can stop and step through Go code, but it can't show Go's variables.\n", .info)
+            console.append("LLDB can stop and step through Go code, but it can't show Go's variables. To see them, install Delve: brew install delve\n", .info)
         }
     }
 

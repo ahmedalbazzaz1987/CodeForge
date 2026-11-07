@@ -124,6 +124,9 @@ public enum LanguageServerSpecs {
                            installHint: "Install it with: brew install gopls"),
         LanguageServerSpec(id: "rust-analyzer", name: "rust-analyzer", languages: ["rust"], executables: ["rust-analyzer"],
                            installHint: "Install it with: brew install rust-analyzer"),
+        // Eclipse's Java server keeps its index in a folder named after the project folder it starts in.
+        LanguageServerSpec(id: "jdtls", name: "Eclipse JDT LS", languages: ["java"], executables: ["jdtls"],
+                           installHint: "Install it with: brew install jdtls"),
     ]
 
     public static func spec(forLanguage id: String) -> LanguageServerSpec? {
@@ -151,6 +154,9 @@ public enum HoverText {
             lines.append(line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: ""))
         }
         var text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Links keep their words (jdtls ends with "Source: *[project](file://…)*"), and *emphasis* loses its stars.
+        text = text.replacingOccurrences(of: #"\[([^\]\n]*)\]\([^)\n]*\)"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?<![*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![*\w])"#, with: "$1", options: .regularExpression)
         while text.contains("\n\n\n") { text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n") }
         return text
     }

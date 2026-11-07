@@ -40,7 +40,7 @@ Releases.
   Rename (F2) and live error squiggles, powered by standard language servers. VB.NET, which has no language server, gets
   CodeForge's own IntelliSense: member lists from your project and common .NET classes, hover info and Go to Definition.
 - **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
-  Debug C#, VB.NET and F# (netcoredbg), Python (debugpy) and C, C++, Objective-C, Swift, Rust and Go (LLDB; for Go, LLDB stops and steps but can't show variables): breakpoints (F9), stepping
+  Debug C#, VB.NET and F# (netcoredbg), Python (debugpy) and C, C++, Objective-C, Swift and Rust (LLDB), and Go (Delve when it's installed, with variables; otherwise LLDB, which stops and steps but can't show them): breakpoints (F9), stepping
   (F10 / F11 / ⇧F11), Locals, Call Stack and an expression evaluator.
 - **Git built in.** A Git Changes panel to stage, commit, switch branches, pull and push, diffs and history, and the
   branch in the status bar. **CodeLens** shows reference counts and who last changed each function.
@@ -125,6 +125,7 @@ CodeForge talks to standard language servers. The status bar shows which one is 
 | C# | csharp-ls | Click **Install C# IntelliSense…** in the status bar (needs the .NET SDK) |
 | Go | gopls | `brew install gopls` |
 | Rust | rust-analyzer | `brew install rust-analyzer` |
+| Java | Eclipse JDT LS | `brew install jdtls` |
 | VB.NET (and others without a server) | CodeForge's own | Built in |
 
 Servers that CodeForge installs live in `~/Library/Application Support/<bundle id>/LanguageServers`. Find All

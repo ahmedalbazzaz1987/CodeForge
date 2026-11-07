@@ -24,23 +24,73 @@ final class DebugAdapter {
         return finder.terminationStatus == 0 && !path.isEmpty ? URL(fileURLWithPath: path) : nil
     }
 
-    func start(_ executable: URL, arguments: [String] = [], environment: [String: String]? = nil) -> Bool {
+    /// Requests made before a socket adapter is connected; sent once it is.
+    private var queued: [[String: Any]] = []
+    private var connected = false
+    private var socket: FileHandle?
+    private var printed = ""
+
+    /// `socket`: the adapter talks over TCP and prints its address first (Delve's "DAP server listening at: host:port").
+    func start(_ executable: URL, arguments: [String] = [], environment: [String: String]? = nil, socket: Bool = false) -> Bool {
         let input = Pipe(), output = Pipe()
         process.executableURL = executable
         process.arguments = arguments
         if let environment { process.environment = environment }
         process.standardInput = input
         process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
+        process.standardError = socket ? output : FileHandle.nullDevice
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { handle.readabilityHandler = nil; return }
+            DispatchQueue.main.async { socket ? self?.adapterPrinted(data) : self?.receive(data) }
+        }
+        process.terminationHandler = { [weak self] _ in DispatchQueue.main.async { self?.onExit?() } }
+        guard (try? process.run()) != nil else { return false }
+        if socket {
+            stdin = nil
+        } else {
+            stdin = input.fileHandleForWriting
+            connected = true
+        }
+        return true
+    }
+
+    /// Before connecting: look for the address. After: anything the adapter prints is the program's own output.
+    private func adapterPrinted(_ data: Data) {
+        let text = String(decoding: data, as: UTF8.self)
+        guard !connected else { return onEvent?("output", ["category": "stdout", "output": text]) ?? () }
+        printed += text
+        guard let range = printed.range(of: #"listening at: ([0-9.]+):(\d+)"#, options: .regularExpression) else { return }
+        let address = printed[range].components(separatedBy: ": ").last ?? ""
+        let parts = address.split(separator: ":")
+        guard parts.count == 2, let port = UInt16(parts[1]), let handle = Self.connect(host: String(parts[0]), port: port) else {
+            onEvent?("output", ["category": "stderr", "output": "Couldn't connect to the debugger at \(address).\n"])
+            return terminate()
+        }
+        socket = handle
+        stdin = handle
+        handle.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { handle.readabilityHandler = nil; return }
             DispatchQueue.main.async { self?.receive(data) }
         }
-        process.terminationHandler = { [weak self] _ in DispatchQueue.main.async { self?.onExit?() } }
-        guard (try? process.run()) != nil else { return false }
-        stdin = input.fileHandleForWriting
-        return true
+        connected = true
+        queued.forEach(write)
+        queued.removeAll()
+    }
+
+    private static func connect(host: String, port: UInt16) -> FileHandle? {
+        let descriptor = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard descriptor >= 0 else { return nil }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = inet_addr(host)
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard result == 0 else { close(descriptor); return nil }
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     }
 
     func request(_ command: String, _ arguments: [String: Any] = [:], completion: (([String: Any]) -> Void)? = nil) {
@@ -55,6 +105,7 @@ final class DebugAdapter {
     }
 
     private func write(_ message: [String: Any]) {
+        guard connected else { return queued.append(message) }
         guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
         try? stdin?.write(contentsOf: LSPMessageBuffer.frame(data))
     }
@@ -87,6 +138,8 @@ struct DebugConfiguration {
     let launch: [String: Any]
     /// LLDB needs macOS's permission to control another process; debugpy doesn't.
     var needsDeveloperAccess = false
+    /// Delve speaks the protocol over TCP rather than stdin and stdout.
+    var usesSocket = false
 
     /// Compiled programs (C, C++, Objective-C, Swift, Rust, Go) with Xcode's lldb-dap.
     static func lldb(program: URL, folder: URL) -> DebugConfiguration? {
@@ -94,6 +147,16 @@ struct DebugConfiguration {
         return DebugConfiguration(adapter: adapter, adapterID: "lldb-dap",
                                   launch: ["program": program.path, "args": [String](), "cwd": folder.path, "stopOnEntry": false],
                                   needsDeveloperAccess: true)
+    }
+
+    /// Go programs with Delve, which (unlike LLDB) can show Go's variables. CodeForge builds the program; Delve runs it.
+    static func delve(program: URL, folder: URL) -> DebugConfiguration? {
+        guard let dlv = GoDebugging.executable else { return nil }
+        return DebugConfiguration(adapter: dlv, adapterArguments: ["dap", "--listen=127.0.0.1:0"], environment: LanguageServerManager.environment,
+                                  adapterID: "go",
+                                  launch: ["type": "go", "request": "launch", "mode": "exec", "program": program.path, "cwd": folder.path,
+                                           "stopOnEntry": false, "outputMode": "remote"],
+                                  needsDeveloperAccess: true, usesSocket: true)
     }
 
     /// A built .NET program (its .dll) under netcoredbg. ASP.NET apps get their launch profile's address.
@@ -126,6 +189,15 @@ struct DebugConfiguration {
                                   launch: ["type": "python", "request": "launch", "program": file.path, "cwd": folder.path,
                                            "python": python.path, "console": "internalConsole", "justMyCode": true,
                                            "redirectOutput": true, "stopOnEntry": false, "env": ["PYTHONUNBUFFERED": "1"]])
+    }
+}
+
+/// Go debugging with Delve (`brew install delve`), when it's installed. Without it, Go is debugged with LLDB.
+enum GoDebugging {
+    static var executable: URL? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return ["/opt/homebrew/bin/dlv", "/usr/local/bin/dlv", home + "/go/bin/dlv"].map(URL.init(fileURLWithPath:))
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 }
 
@@ -207,7 +279,8 @@ final class DebugSession {
     }
 
     func start() -> Bool {
-        guard adapter.start(configuration.adapter, arguments: configuration.adapterArguments, environment: configuration.environment) else { return false }
+        guard adapter.start(configuration.adapter, arguments: configuration.adapterArguments, environment: configuration.environment,
+                            socket: configuration.usesSocket) else { return false }
         adapter.onEvent = { [weak self] event, body in self?.handle(event, body) }
         adapter.onExit = { [weak self] in self?.state = .ended }
         adapter.request("initialize", [
@@ -252,6 +325,7 @@ final class DebugSession {
             guard let text = body["output"] as? String else { return }
             let category = body["category"] as? String ?? "console"
             if category == "telemetry" { return }   // adapter-internal events (debugpy sends "ptvsd", "debugpy")
+            if text.hasPrefix("Type 'dlv help'") { return }   // Delve's hint for its own command line
             // The debugger's own messages can lack a line ending, and the program's first line would join on to them.
             let isProgram = category == "stderr" || category == "stdout"
             onOutput?(isProgram || text.hasSuffix("\n") ? text : text + "\n", category == "stderr" ? .error : isProgram ? .output : .info)

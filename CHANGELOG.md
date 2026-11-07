@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0
+
+- **Go variables while debugging.** With Delve installed (`brew install delve`), Go programs are debugged with it, so the
+  Locals panel shows variables, structs and slices. Without it, CodeForge still uses LLDB and says how to get Delve.
+- **IntelliSense for Java** with Eclipse's language server (`brew install jdtls`): member lists, hover, Go to Definition,
+  references and live errors.
+- Hover text no longer shows Markdown links and stars as raw text.
+
 ## 0.11.6
 
 Fixes from testing .NET MAUI with the workload installed.

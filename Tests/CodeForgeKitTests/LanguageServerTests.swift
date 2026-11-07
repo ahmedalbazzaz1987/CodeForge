@@ -28,5 +28,7 @@ final class LanguageServerTests: XCTestCase {
         XCTAssertEqual(LanguageServerSpecs.languageId(forLanguage: "typescript", fileExtension: "tsx"), "typescriptreact")
         XCTAssertNil(LanguageServerSpecs.spec(forLanguage: "markdown"))
         XCTAssertEqual(HoverText.plain("```swift\nfunc f() -> Int\n```\n\n**Returns** the `value`."), "func f() -> Int\n\nReturns the value.")
+        XCTAssertEqual(HoverText.plain("Shop shop\n\nSource: *[shop_1a2b](file:///tmp/Main.java#11)*"), "Shop shop\n\nSource: shop_1a2b")
+        XCTAssertEqual(HoverText.plain("a * b * c"), "a * b * c")
     }
 }
