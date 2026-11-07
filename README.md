@@ -123,8 +123,8 @@ CodeForge talks to standard language servers. The status bar shows which one is 
 | Python | Pyright | Click **Install Python IntelliSense…** in the status bar (needs Node.js) |
 | JavaScript, TypeScript | TypeScript 7 (`tsc --lsp`) | Click **Install … IntelliSense…** in the status bar (needs Node.js) |
 | C# | csharp-ls | Click **Install C# IntelliSense…** in the status bar (needs the .NET SDK) |
-| Go | gopls | `go install golang.org/x/tools/gopls@latest` |
-| Rust | rust-analyzer | `rustup component add rust-analyzer` |
+| Go | gopls | `brew install gopls` |
+| Rust | rust-analyzer | `brew install rust-analyzer` |
 | VB.NET (and others without a server) | CodeForge's own | Built in |
 
 Servers that CodeForge installs live in `~/Library/Application Support/<bundle id>/LanguageServers`. Find All
