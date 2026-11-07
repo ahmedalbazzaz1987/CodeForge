@@ -31,7 +31,8 @@ public struct Diagnostic: Equatable, Hashable, Sendable {
 
 /// Reads compiler and runtime error formats from plain output:
 /// clang/gcc/swiftc/go/javac/ruby (`file:line:col: error: message`), TypeScript (`file(line,col): error …`),
-/// Rust (`error: …` then `--> file:line:col`), Python tracebacks and Node.js stack traces.
+/// Rust (`error: …` then `--> file:line:col`), Python tracebacks, Node.js stack traces, and .NET unhandled exceptions and
+/// failed tests (at the first stack frame that has a file and line: your code, not the framework's).
 public enum DiagnosticParser {
     private static func regex(_ pattern: String) -> NSRegularExpression {
         try! NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
@@ -45,6 +46,9 @@ public enum DiagnosticParser {
     private static let pythonFrame = regex(#"^\s*File "([^"]+)", line (\d+)"#)
     private static let nodeLocation = regex(#"^(/[^:\n]+\.[cm]?[jt]sx?):(\d+)$"#)
     private static let exceptionLine = regex(#"^([A-Za-z_][\w.]*(?:Error|Exception|Warning|Interrupt|Exit)(?::.*)?)$"#)
+    private static let dotnetUnhandled = regex(#"^Unhandled exception\. (.+)$"#)
+    private static let dotnetFailedTest = regex(#"^\s*Failed (\S+) \["#)
+    private static let dotnetFrame = regex(#"^\s+at .+ in (.+):line (\d+)\s*$"#)
 
     public static func parse(_ output: String) -> [Diagnostic] {
         var results: [Diagnostic] = []
@@ -55,6 +59,8 @@ public enum DiagnosticParser {
 
         var pendingRust: (Diagnostic.Severity, String)?
         var pendingFrame: (file: String, line: Int)?   // last Python/Node location, waiting for its exception line
+        var pendingDotNet: String?                     // a .NET exception or failed test, waiting for its first frame with a file
+        var testMessageNext = false
 
         for rawLine in output.components(separatedBy: "\n") {
             let line = rawLine.trimmingCharacters(in: CharacterSet(charactersIn: "\r"))
@@ -65,6 +71,28 @@ public enum DiagnosticParser {
                 return range.location == NSNotFound ? nil : ns.substring(with: range)
             }
 
+            if let match = dotnetUnhandled.firstMatch(in: line, range: all) {
+                pendingDotNet = group(match, 1)
+                continue
+            }
+            if let match = dotnetFailedTest.firstMatch(in: line, range: all) {
+                pendingDotNet = "Test failed: " + group(match, 1)!
+                continue
+            }
+            if pendingDotNet != nil, line.trimmingCharacters(in: .whitespaces) == "Error Message:" {
+                testMessageNext = true
+                continue
+            }
+            if testMessageNext, let failed = pendingDotNet, !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                pendingDotNet = failed + " — " + line.trimmingCharacters(in: .whitespaces)
+                testMessageNext = false
+                continue
+            }
+            if let message = pendingDotNet, let match = dotnetFrame.firstMatch(in: line, range: all) {
+                add(Diagnostic(severity: .error, message: message, file: group(match, 1)!, line: Int(group(match, 2)!)!))
+                pendingDotNet = nil
+                continue
+            }
             if let match = rustHeader.firstMatch(in: line, range: all) {
                 pendingRust = (group(match, 1) == "warning" ? .warning : .error, group(match, 2) ?? "")
                 continue

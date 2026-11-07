@@ -535,4 +535,32 @@ final class CrashAndCompileColorTests: XCTestCase {
         XCTAssertEqual(plan.run, "dotnet run -f net10.0-maccatalyst -p:ValidateXcodeVersion=false")
         XCTAssertTrue(BuildSystem.isMauiProject(in: folder))
     }
+
+    func testDotNetExceptionsAndFailedTestsGoToTheErrorList() {
+        let crash = """
+        Unhandled exception. System.NullReferenceException: Object reference not set to an instance of an object.
+           at Helper.Run(String name) in /Users/me/المستندات/ExApp/Program.cs:line 9
+           at Program.<Main>$(String[] args) in /Users/me/المستندات/ExApp/Program.cs:line 3
+        """
+        let first = DiagnosticParser.parse(crash)
+        XCTAssertEqual(first.count, 1)
+        XCTAssertEqual(first.first?.line, 9)
+        XCTAssertEqual(first.first?.file, "/Users/me/المستندات/ExApp/Program.cs")
+        XCTAssertTrue(first.first?.message.hasPrefix("System.NullReferenceException") == true)
+
+        let test = """
+        [xUnit.net 00:00:00.09]     TestApp.UnitTest1.Test1 [FAIL]
+          Failed TestApp.UnitTest1.Test1 [5 ms]
+          Error Message:
+           Assert.Equal() Failure: Values differ
+        Expected: 2
+          Stack Trace:
+             at TestApp.UnitTest1.Test1() in /tmp/TestApp/UnitTest1.cs:line 9
+           at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+        """
+        let failed = DiagnosticParser.parse(test)
+        XCTAssertEqual(failed.map(\.line), [9])
+        XCTAssertEqual(failed.first?.message, "Test failed: TestApp.UnitTest1.Test1 — Assert.Equal() Failure: Values differ")
+        XCTAssertTrue(BuiltInSnippets.all.contains { $0.languageId == "fsharp" && $0.shortcut == "pf" })
+    }
 }

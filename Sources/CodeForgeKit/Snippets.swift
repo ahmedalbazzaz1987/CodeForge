@@ -94,7 +94,7 @@ public enum BuiltInSnippets {
         CodeSnippet(id: "builtin.\(language).\(shortcut)", title: title, shortcut: shortcut, languageId: language, body: body, isBuiltIn: true)
     }
 
-    public static let all: [CodeSnippet] = vb + csharp + python + javascript + typescript + swift + html + c + cpp + java + go + rust
+    public static let all: [CodeSnippet] = vb + csharp + python + javascript + typescript + swift + html + c + cpp + java + go + rust + fsharp
 
     static let c: [CodeSnippet] = [
         make("c", "main", "main", "#include <stdio.h>\n\nint main(void) {\n    $0\n    return 0;\n}"),
@@ -146,6 +146,18 @@ public enum BuiltInSnippets {
         make("rust", "struct", "Struct", "struct $0Name {\n    id: u32,\n}"),
         make("rust", "match", "match", "match $0value {\n    Some(item) => {}\n    None => {}\n}"),
         make("rust", "pl", "println!", "println!(\"{}\", $0);"),
+    ]
+
+    static let fsharp = [
+        make("fsharp", "let", "Function", "let $0name x =\n    x"),
+        make("fsharp", "rec", "Recursive function", "let rec $0name n =\n    if n <= 0 then 0 else n + name (n - 1)"),
+        make("fsharp", "type", "Record type", "type $0Name = { Field: string }"),
+        make("fsharp", "union", "Discriminated union", "type $0Shape =\n    | Circle of float\n    | Square of float"),
+        make("fsharp", "match", "match expression", "match $0value with\n| Some x -> x\n| None -> 0"),
+        make("fsharp", "for", "for…in loop", "for item in $0items do\n    printfn \"%A\" item"),
+        make("fsharp", "pf", "printfn", "printfn \"%A\" $0"),
+        make("fsharp", "async", "async block", "async {\n    $0\n    return ()\n}"),
+        make("fsharp", "try", "try…with", "try\n    $0\nwith ex ->\n    printfn \"%s\" ex.Message"),
     ]
 
     static let vb: [CodeSnippet] = [

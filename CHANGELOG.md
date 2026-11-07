@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.1
+
+Fixes found while testing the Windows version, brought to the Mac.
+
+- **.NET exceptions and failed tests go to the Error List**, at the first line of your own code in the stack trace, with
+  the exception or the assertion's message. Double-click to go there.
+- **Inserting two Toolbox items in a row** puts the second after the first, on its own line, instead of inside it.
+- **F# snippets**: `let`, `rec`, `type`, `union`, `match`, `for`, `pf`, `async` and `try`, with Tab or from the Toolbox.
+- Checked on the Mac and already working: projects in folders with Arabic names, Arabic typed into a running program,
+  and color codes in program output.
+
 ## 0.12.0
 
 - **Go variables while debugging.** With Delve installed (`brew install delve`), Go programs are debugged with it, so the

@@ -208,8 +208,22 @@ final class CodeTextView: NSTextView {
 
     // MARK: Line commands (Edit menu)
 
+    /// The last Toolbox insertion while nothing has changed since: where it ended, the text length and the cursor after it.
+    private var lastToolboxInsert: (end: Int, length: Int, cursor: Int)?
+
     /// Inserts a Toolbox item at the cursor, indented to match the line, with the cursor where the item says.
     func insertSnippet(_ item: ToolboxItem) {
+        // Inserting twice in a row puts the second item after the first, on its own line, rather than inside it
+        // (the cursor is left inside the first, ready for its content).
+        if let last = lastToolboxInsert, selectedRange().length == 0, (string as NSString).length == last.length,
+           selectedRange().location == last.cursor, last.end <= last.length {
+            let ns = string as NSString
+            let endLine = ns.lineRange(for: NSRange(location: max(last.end - 1, 0), length: 0))
+            let endIndent = ns.substring(with: endLine).prefix { $0 == " " || $0 == "\t" }
+            let gap = "\n" + endIndent
+            insertText(gap, replacementRange: NSRange(location: last.end, length: 0))
+            setSelectedRange(NSRange(location: last.end + (gap as NSString).length, length: 0))
+        }
         let ns = string as NSString
         let selection = selectedRange()
         let lineStart = ns.lineRange(for: NSRange(location: selection.location, length: 0)).location
@@ -218,11 +232,13 @@ final class CodeTextView: NSTextView {
         // At the start of a line that already has code, give the new item its own line.
         let lineEnd = NSMaxRange(ns.lineRange(for: NSRange(location: selection.location, length: 0)))
         let after = ns.substring(with: NSRange(location: NSMaxRange(selection), length: max(lineEnd - NSMaxRange(selection), 0)))
+        let itemLength = (text as NSString).length
         if indent.count == selection.location - lineStart, !after.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             text += "\n" + indent
         }
         insertText(text, replacementRange: selection)
         setSelectedRange(NSRange(location: selection.location + cursor, length: 0))
+        lastToolboxInsert = (selection.location + itemLength, (string as NSString).length, selection.location + cursor)
         window?.makeFirstResponder(self)
     }
 
