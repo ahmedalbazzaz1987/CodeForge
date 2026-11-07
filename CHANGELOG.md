@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.5
+
+Fixes from testing IntelliSense and stepping in Go and Rust.
+
+- **Reference counts are right in Rust.** rust-analyzer answers "no references" while it reads the project, so every
+  function showed "0 references" until the file was saved. CodeForge now waits for it and asks again. Any language server
+  that reports its progress gets the same treatment.
+- The debugger's own messages no longer run into the first line of the program's output.
+- The install hints for rust-analyzer and gopls now use Homebrew, which works whichever way Rust and Go were installed.
+
 ## 0.11.4
 
 Fixes from testing Java, Go and Rust with the tools installed.

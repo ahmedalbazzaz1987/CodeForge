@@ -21,6 +21,12 @@ final class LanguageServer {
 
     /// (file, diagnostics) whenever the server publishes diagnostics.
     var onDiagnostics: ((URL, [Diagnostic]) -> Void)?
+    /// Called when the server has finished reading the project, so answers it gave before then can be asked for again.
+    var onIdle: (() -> Void)?
+    /// Work the server has announced and not finished, such as indexing. Until it ends, "no references" means nothing.
+    private var activeWork = Set<String>()
+    private var idleTimer: Timer?
+    var isBusy: Bool { !activeWork.isEmpty }
 
     init(spec: LanguageServerSpec, executable: URL, root: URL) {
         self.spec = spec
@@ -79,6 +85,7 @@ final class LanguageServer {
                     ],
                     "diagnostic": ["dynamicRegistration": false],
                 ],
+                "window": ["workDoneProgress": true],
                 "workspace": ["workspaceFolders": true, "configuration": true, "applyEdit": true,
                               "workspaceEdit": ["documentChanges": true], "executeCommand": ["dynamicRegistration": false]],
             ],
@@ -163,8 +170,21 @@ final class LanguageServer {
                 write(["jsonrpc": "2.0", "id": id, "result": result])
             } else if method == "textDocument/publishDiagnostics", let params = message["params"] as? [String: Any] {
                 publishDiagnostics(params)
+            } else if method == "$/progress", let params = message["params"] as? [String: Any] {
+                progress(params)
             }
         }
+    }
+
+    private func progress(_ params: [String: Any]) {
+        guard let token = params["token"].map({ String(describing: $0) }), let kind = (params["value"] as? [String: Any])?["kind"] as? String else { return }
+        if kind == "begin" { activeWork.insert(token); idleTimer?.invalidate() }
+        guard kind == "end" else { return }
+        activeWork.remove(token)
+        guard activeWork.isEmpty else { return }
+        // Servers often start the next stage right away, so wait for a pause.
+        idleTimer?.invalidate()
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in self?.onIdle?() }
     }
 
     private func publishDiagnostics(_ params: [String: Any]) {
@@ -192,6 +212,7 @@ final class LanguageServerManager {
     private var servers: [String: LanguageServer] = [:]
     private var xcrunCache: [String: URL?] = [:]
     var onDiagnostics: ((URL, [Diagnostic]) -> Void)?
+    var onServerIdle: ((LanguageServer) -> Void)?
     /// Applies edits a server asks for (`workspace/applyEdit`).
     var onApplyEdit: ((LanguageSession.Edits) -> Void)?
 
@@ -241,6 +262,7 @@ final class LanguageServerManager {
         guard let executable = executable(for: spec) else { return nil }
         let server = LanguageServer(spec: spec, executable: executable, root: root)
         server.onDiagnostics = { [weak self] in self?.onDiagnostics?($0, $1) }
+        server.onIdle = { [weak self, weak server] in if let server { self?.onServerIdle?(server) } }
         guard server.start() else { return nil }
         servers[key] = server
         return server

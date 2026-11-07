@@ -514,6 +514,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             panel.references.set(title: word, locations)
             showPanelTab(.references)
         }
+        LanguageServerManager.shared.onServerIdle = { [weak self] server in
+            guard let self else { return }
+            documents.filter { $0.session?.server === server }.forEach(updateCodeLens)
+        }
         LanguageServerManager.shared.onDiagnostics = { [weak self] url, diagnostics in
             self?.liveDiagnostics[url.standardizedFileURL] = diagnostics
             self?.refreshDiagnostics()
@@ -2020,8 +2024,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
                         continue
                     }
                     session.referenceCount(line: symbol.line, character: symbol.character) { count in
-                        parts.insert("\(count) reference\(count == 1 ? "" : "s")", at: 0)
-                        lenses[symbol.line] = parts.joined(separator: "  |  ")
+                        // A server still reading the project answers "none" for everything. It's asked again when it's done.
+                        if count > 0 || !session.server.isBusy {
+                            parts.insert("\(count) reference\(count == 1 ? "" : "s")", at: 0)
+                        }
+                        if !parts.isEmpty { lenses[symbol.line] = parts.joined(separator: "  |  ") }
                         finish()
                     }
                 }

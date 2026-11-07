@@ -252,7 +252,9 @@ final class DebugSession {
             guard let text = body["output"] as? String else { return }
             let category = body["category"] as? String ?? "console"
             if category == "telemetry" { return }   // adapter-internal events (debugpy sends "ptvsd", "debugpy")
-            onOutput?(text, category == "stderr" ? .error : category == "stdout" ? .output : .info)
+            // The debugger's own messages can lack a line ending, and the program's first line would join on to them.
+            let isProgram = category == "stderr" || category == "stdout"
+            onOutput?(isProgram || text.hasSuffix("\n") ? text : text + "\n", category == "stderr" ? .error : isProgram ? .output : .info)
         case "exited":
             let code = body["exitCode"] as? Int ?? 0
             onOutput?("\n[Program exited with code \(code)]\n", code == 0 ? .info : .error)

@@ -121,9 +121,9 @@ public enum LanguageServerSpecs {
         LanguageServerSpec(id: "csharp-ls", name: "csharp-ls", languages: ["csharp"], executables: ["csharp-ls"], dotnetTool: "csharp-ls",
                            installHint: "CodeForge can install it for you (needs the .NET SDK: brew install dotnet)."),
         LanguageServerSpec(id: "gopls", name: "gopls", languages: ["go"], executables: ["gopls"],
-                           installHint: "Install it with: go install golang.org/x/tools/gopls@latest"),
+                           installHint: "Install it with: brew install gopls"),
         LanguageServerSpec(id: "rust-analyzer", name: "rust-analyzer", languages: ["rust"], executables: ["rust-analyzer"],
-                           installHint: "Install it with: rustup component add rust-analyzer"),
+                           installHint: "Install it with: brew install rust-analyzer"),
     ]
 
     public static func spec(forLanguage id: String) -> LanguageServerSpec? {

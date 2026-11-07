@@ -189,7 +189,8 @@ enum DevSnapshot {
     }
 
     private static func probe(_ controller: WorkspaceWindowController, word: String) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        let wait = Double(ProcessInfo.processInfo.environment["CF_LSP_PROBE_AT"] ?? "") ?? 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
             guard let textView = find(controller.window!.contentView!, CodeTextView.self),
                   let session = controller.documentForProbe(textView)?.session else { print("PROBE: no session"); exit(1) }
             let ns = textView.string as NSString
