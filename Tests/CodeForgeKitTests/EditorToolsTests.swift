@@ -509,3 +509,18 @@ final class TestOutputTests: XCTestCase {
         XCTAssertEqual(OutputClassifier.kind(of: "Passed!  - Failed:     0, Passed:     1"), .normal)
     }
 }
+
+final class CrashAndCompileColorTests: XCTestCase {
+    func testGoRustAndJavaFailuresAreRed() {
+        XCTAssertEqual(OutputClassifier.kind(of: "./main.go:6:14: undefined: y"), .error)
+        XCTAssertEqual(OutputClassifier.kind(of: "panic: runtime error: index out of range [5] with length 2"), .error)
+        XCTAssertEqual(OutputClassifier.kind(of: "thread 'main' panicked at src/main.rs:11:25:"), .error)
+        XCTAssertEqual(OutputClassifier.kind(of: "thread 'main' (227151) panicked at src/main.rs:11:21:"), .error)
+        XCTAssertEqual(OutputClassifier.kind(of: "Exception in thread \"main\" java.lang.ArrayIndexOutOfBoundsException: 5"), .error)
+        XCTAssertEqual(OutputClassifier.kind(of: "Hello from main.go"), .normal)
+    }
+
+    func testGoDebugBuildsKeepDebugInformationReadable() {
+        XCTAssertTrue(BuildSystem.singleFile(URL(fileURLWithPath: "/a/b.go"), languageId: "go", outputDirectory: URL(fileURLWithPath: "/o"))?.build.contains("-compressdwarf=false") == true)
+    }
+}

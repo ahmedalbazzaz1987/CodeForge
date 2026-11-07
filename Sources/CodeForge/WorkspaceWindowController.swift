@@ -1551,7 +1551,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if isDotNetProject, projectRunPlan != nil || ["csharp", "vb", "fsharp", "razor"].contains(current?.language.id ?? "") {
             return startDotNetDebugging()
         }
-        if let language = current?.language.id, ["javascript", "typescript", "ruby", "php", "shell"].contains(language), buildPlan()?.program == nil {
+        if let language = current?.language.id, ["javascript", "typescript", "ruby", "php", "shell", "java", "kotlin", "lua"].contains(language), buildPlan()?.program == nil {
             return Prompt.show("Debugging isn't available for \(current!.language.name) yet",
                                message: "CodeForge debugs Python, .NET (C#, VB.NET, F#) and compiled programs (C, C++, Objective-C, Swift, Rust and Go). Use Start (⌘R) to run this file.")
         }
@@ -1625,6 +1625,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             return Prompt.show("Couldn't start the debugger", message: "CodeForge uses lldb-dap from Xcode. Install Xcode, then run: xcode-select -s /Applications/Xcode.app")
         }
         startSession(configuration, title: path)
+        if current?.language.id == "go" {
+            console.append("LLDB can stop and step through Go code, but it can't show Go's variables.\n", .info)
+        }
     }
 
     private func startSession(_ configuration: DebugConfiguration, title: String) {

@@ -40,7 +40,7 @@ Releases.
   Rename (F2) and live error squiggles, powered by standard language servers. VB.NET, which has no language server, gets
   CodeForge's own IntelliSense: member lists from your project and common .NET classes, hover info and Go to Definition.
 - **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
-  Debug C#, VB.NET and F# (netcoredbg), Python (debugpy) and C, C++, Objective-C, Swift, Rust and Go (LLDB): breakpoints (F9), stepping
+  Debug C#, VB.NET and F# (netcoredbg), Python (debugpy) and C, C++, Objective-C, Swift, Rust and Go (LLDB; for Go, LLDB stops and steps but can't show variables): breakpoints (F9), stepping
   (F10 / F11 / ⇧F11), Locals, Call Stack and an expression evaluator.
 - **Git built in.** A Git Changes panel to stage, commit, switch branches, pull and push, diffs and history, and the
   branch in the status bar. **CodeLens** shows reference counts and who last changed each function.

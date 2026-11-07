@@ -14,11 +14,12 @@ public enum OutputClassifier {
         | ^Exception\ in\ thread\b
         | ^Unhandled\ exception\b
         | ^panic:\ 
-        | ^thread\ '.*'\ panicked\b
+        | ^thread\ '.*'(?:\ \(\d+\))?\ panicked\b
         | \bFatal\ error:\                                            # Swift crashes
         | ^Build\ FAILED\b | ^FAILED\b | ^Failed!\s
         | ^zsh:\ .*(?:command\ not\ found|no\ such\ file|permission\ denied)
-        | \[FAIL\]\s*$ | ^Failed!\s | ^\s*Failed\ \S+\ \[\d                # a failing .NET test
+        | ^\S*\.go:\d+:\d+:\                                            # Go compile errors have no "error:"
+        | \[FAIL\]\s*$ | ^\s*Failed\ \S+\ \[\d                # a failing .NET test
         | ^Segmentation\ fault | ^Bus\ error | ^Illegal\ instruction | ^Abort\ trap
         """#)
     private static let warningPattern = try! NSRegularExpression(pattern: #"""

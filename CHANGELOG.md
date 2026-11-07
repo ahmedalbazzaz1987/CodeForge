@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.4
+
+Fixes from testing Java, Go and Rust with the tools installed.
+
+- **Go breakpoints now stop.** Go compresses its debug information by default, which LLDB can't read, so they were
+  silently skipped. Stepping and the call stack work too. LLDB can't show Go's variables, and the Output panel says so.
+- **Start Debugging on a Java file** says debugging isn't available for Java yet, instead of asking for a program to debug.
+- Go compile errors and Rust panics show in red.
+
 ## 0.11.3
 
 - Breakpoints in single C and C++ files stop again when the file is reached through a symbolic link (or under /tmp). This

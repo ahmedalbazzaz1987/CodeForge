@@ -155,7 +155,7 @@ public enum BuildSystem {
                              program: name.map { path + "/target/debug/" + $0 }, folder: path, run: "cargo run", languages: ["rust"])
         }
         if names.contains("go.mod") {
-            return BuildPlan(name: "Go module", build: "go build -gcflags=all='-N -l' -o .codeforge/debug-binary .",
+            return BuildPlan(name: "Go module", build: "go build -gcflags=all='-N -l' -ldflags=-compressdwarf=false -o .codeforge/debug-binary .",
                              clean: "go clean && rm -rf .codeforge", program: path + "/.codeforge/debug-binary", folder: path,
                              run: "go run .", languages: ["go"])
         }
@@ -191,7 +191,7 @@ public enum BuildSystem {
             "objc": "clang -g -O0 -fobjc-arc -framework Foundation {file} -o {out}",
             "swift": "swiftc -g -Onone {file} -o {out}",
             "rust": "rustc -g {file} -o {out}",
-            "go": "go build -gcflags=all='-N -l' -o {out} {file}",
+            "go": "go build -gcflags=all='-N -l' -ldflags=-compressdwarf=false -o {out} {file}",
             "python": "python3 -m py_compile {file}",
             "java": "javac -d {dir} {file}",
             "typescript": "npx --yes tsc --noEmit {file}",
