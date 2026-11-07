@@ -117,6 +117,12 @@ public enum BuildSystem {
         return plainSDK && !makesProgram ? (name as NSString).deletingPathExtension : nil
     }
 
+    /// A .NET MAUI app runs on a Mac through Mac Catalyst, which the .NET debugger can't start the way it starts a program.
+    public static func isMauiProject(in folder: URL) -> Bool {
+        guard let project = dotnetProject(in: folder), let text = try? String(contentsOf: project, encoding: .utf8) else { return false }
+        return text.contains("<UseMaui>true</UseMaui>")
+    }
+
     /// Recognizes the project in a folder from the files at its top level.
     public static func detect(in folder: URL) -> BuildPlan? {
         let fm = FileManager.default
@@ -134,12 +140,16 @@ public enum BuildSystem {
             var run = "dotnet run" + runTarget
             // A test project has no program to run: `dotnet run` would do nothing and say nothing.
             if let project = dotnetProject, isTestProject(read(project)) { run = "dotnet test" }
-            // .NET MAUI targets several platforms; on a Mac, Start runs the Mac Catalyst one.
+            // .NET MAUI targets several platforms; on a Mac, Start runs the Mac Catalyst one. `dotnet build -t:Run` wouldn't
+            // build first. .NET also refuses any Xcode but the one it was made for, even a newer one that works.
+            var build = "dotnet build"
             if let project = dotnetProject, read(project).contains("<UseMaui>true</UseMaui>"),
                let catalyst = firstMatch(#"(net\d+\.\d+-maccatalyst)"#, in: read(project)) {
-                run = "dotnet build -t:Run -f " + catalyst
+                run = "dotnet run -f \(catalyst) -p:ValidateXcodeVersion=false"
+                // Building every platform would also need the Android SDK.
+                build = "dotnet build -f \(catalyst) -p:ValidateXcodeVersion=false"
             }
-            return BuildPlan(name: ".NET (\(name))", build: "dotnet build", clean: "dotnet clean", folder: path,
+            return BuildPlan(name: ".NET (\(name))", build: build, clean: "dotnet clean", folder: path,
                              run: run, languages: ["csharp", "vb", "fsharp", "razor", "html", "css", "javascript", "json"])
         }
         if names.contains("Package.swift") {

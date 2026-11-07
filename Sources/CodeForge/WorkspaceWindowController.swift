@@ -1552,6 +1552,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard debugSession == nil, !isRunning else { return }
         if current?.language.id == "python" { return startPythonDebugging() }
         if sayLibraryCantStart() { return }
+        if let workspaceURL, BuildSystem.isMauiProject(in: workspaceURL) {
+            return Prompt.show("Debugging isn't available for .NET MAUI apps yet",
+                               message: "CodeForge debugs other C#, VB.NET and F# programs. Use Start (⌘R) to run this app on your Mac.")
+        }
         if isDotNetProject, projectRunPlan != nil || ["csharp", "vb", "fsharp", "razor"].contains(current?.language.id ?? "") {
             return startDotNetDebugging()
         }

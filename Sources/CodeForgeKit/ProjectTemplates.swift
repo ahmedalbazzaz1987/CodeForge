@@ -81,7 +81,7 @@ public enum ProjectTemplates {
         ProjectTemplate(id: "maui", name: ".NET MAUI App",
                         summary: "A cross-platform app with XAML pages; Start runs it on this Mac (Mac Catalyst). Needs the MAUI workload and Xcode.",
                         tags: "C#  MAUI  XAML  Mobile  Desktop", symbol: "iphone.and.arrow.forward", files: [:], mainFile: "MainPage.xaml", runCommand: nil,
-                        command: "{ dotnet new list maui 2>/dev/null | grep -q ' maui ' || { echo 'The .NET MAUI workload is not installed. Install it with: dotnet workload install maui  (about 2 GB; Xcode is needed to run on this Mac)'; exit 1; }; } && dotnet new maui -o {{folder}} -n {{ident}}", group: ".NET"),
+                        command: "{ dotnet new list maui 2>/dev/null | grep -q ' maui ' || { echo 'The .NET MAUI templates were not found. Install them with: dotnet workload install maui  (about 7 GB; Xcode is needed to run on this Mac). If it is already installed: dotnet workload repair'; exit 1; }; } && dotnet new maui -o {{folder}} -n {{ident}}", group: ".NET"),
         ProjectTemplate(id: "avalonia", name: "Avalonia Desktop App (XAML)",
                         summary: "A desktop app with XAML windows, like WPF, that runs on macOS, Windows and Linux.",
                         tags: "C#  XAML  Desktop  Avalonia", symbol: "macwindow", files: [:], mainFile: "MainWindow.axaml", runCommand: nil,

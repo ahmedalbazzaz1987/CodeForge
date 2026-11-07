@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.6
+
+Fixes from testing .NET MAUI with the workload installed.
+
+- **MAUI apps start on the Mac.** Start only opened the last build, so a new project failed and edits didn't show. It now
+  builds first. Start and Build no longer stop at .NET's check for one exact Xcode version, even when Xcode is newer.
+- **Build works without the Android SDK.** On a Mac, Build makes the Mac version only.
+- **Start Debugging on a MAUI app** says debugging isn't available for MAUI yet, instead of failing with build errors.
+- If the MAUI templates are missing right after installing the workload, the message now suggests `dotnet workload repair`.
+
 ## 0.11.5
 
 Fixes from testing IntelliSense and stepping in Go and Rust.

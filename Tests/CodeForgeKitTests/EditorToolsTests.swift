@@ -523,4 +523,16 @@ final class CrashAndCompileColorTests: XCTestCase {
     func testGoDebugBuildsKeepDebugInformationReadable() {
         XCTAssertTrue(BuildSystem.singleFile(URL(fileURLWithPath: "/a/b.go"), languageId: "go", outputDirectory: URL(fileURLWithPath: "/o"))?.build.contains("-compressdwarf=false") == true)
     }
+
+    func testMauiBuildsAndRunsOnlyTheMacVersion() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try "<Project><PropertyGroup><TargetFrameworks>net10.0-android;net10.0-maccatalyst</TargetFrameworks><UseMaui>true</UseMaui></PropertyGroup></Project>"
+            .write(to: folder.appendingPathComponent("App.csproj"), atomically: true, encoding: .utf8)
+        let plan = try XCTUnwrap(BuildSystem.detect(in: folder))
+        XCTAssertEqual(plan.build, "dotnet build -f net10.0-maccatalyst -p:ValidateXcodeVersion=false")
+        XCTAssertEqual(plan.run, "dotnet run -f net10.0-maccatalyst -p:ValidateXcodeVersion=false")
+        XCTAssertTrue(BuildSystem.isMauiProject(in: folder))
+    }
 }
