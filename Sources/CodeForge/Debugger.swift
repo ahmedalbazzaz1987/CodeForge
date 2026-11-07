@@ -278,7 +278,7 @@ final class DebugSession {
 
     /// The path the compiler recorded in the program's debug information. netcoredbg matches it exactly, so a project
     /// reached through a symbolic link (or /tmp) would otherwise never stop at its breakpoints.
-    private static func realPath(of file: URL) -> String {
+    static func realPath(of file: URL) -> String {
         guard let resolved = realpath(file.path, nil) else { return file.path }
         defer { free(resolved) }
         return String(cString: resolved)

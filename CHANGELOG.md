@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.3
+
+- Breakpoints in single C and C++ files stop again when the file is reached through a symbolic link (or under /tmp). This
+  was a side effect of the .NET breakpoint fix in 0.11.2. Ordinary folders were not affected.
+
 ## 0.11.2
 
 More fixes, from running every project template and testing the debugger.

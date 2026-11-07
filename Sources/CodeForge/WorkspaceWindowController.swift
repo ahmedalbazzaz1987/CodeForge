@@ -1394,7 +1394,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         if let workspaceURL, let plan = BuildSystem.detect(in: workspaceURL) { return BuildSystem.plan(plan, for: configuration) }
         guard let current, let file = current.url else { return nil }
-        return BuildSystem.singleFile(file, languageId: current.language.id, outputDirectory: outputDirectory)
+        // Compile the real path, so the debug information matches the path breakpoints are set with.
+        let realFile = URL(fileURLWithPath: DebugSession.realPath(of: file))
+        return BuildSystem.singleFile(realFile, languageId: current.language.id, outputDirectory: outputDirectory)
     }
 
     @objc private func configurationChosen(_ sender: NSPopUpButton) {
