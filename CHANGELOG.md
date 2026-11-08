@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.3
+
+- Opening a project also closes files that were opened on their own while no folder was open, so tabs left from
+  earlier sessions go too.
+
 ## 0.12.2
 
 From re-checking the 0.11.1 fixes on the Mac.

@@ -581,7 +581,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     func setWorkspace(_ url: URL?) {
         // Like closing a solution in Visual Studio: the old project's tabs, errors and output go with it.
-        if let previous = workspaceURL?.standardizedFileURL, previous != url?.standardizedFileURL {
+        // Also when no folder was open: files opened on their own don't carry over into a project.
+        if workspaceURL?.standardizedFileURL != url?.standardizedFileURL {
             guard closeProject() else { return }
         }
         workspaceURL = url
