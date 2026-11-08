@@ -31,4 +31,9 @@ final class LanguageServerTests: XCTestCase {
         XCTAssertEqual(HoverText.plain("Shop shop\n\nSource: *[shop_1a2b](file:///tmp/Main.java#11)*"), "Shop shop\n\nSource: shop_1a2b")
         XCTAssertEqual(HoverText.plain("a * b * c"), "a * b * c")
     }
+
+    func testUnwrappedReleaseNotes() {
+        let notes = "Fixes.\n\n- **Opening a project** closes\n  every tab.\n- Another\nline.\n\n```\nkeep\nthis\n```"
+        XCTAssertEqual(HoverText.unwrapped(notes), "Fixes.\n\n- **Opening a project** closes every tab.\n- Another line.\n\n```\nkeep\nthis\n```")
+    }
 }

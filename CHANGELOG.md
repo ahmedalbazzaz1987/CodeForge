@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.4
+
+- Update messages show the release notes as flowing text, instead of breaking lines where the changelog wraps.
+
 ## 0.12.3
 
 - Opening a project also closes files that were opened on their own while no folder was open, so tabs left from

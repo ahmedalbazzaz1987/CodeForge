@@ -160,4 +160,24 @@ public enum HoverText {
         while text.contains("\n\n\n") { text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n") }
         return text
     }
+
+    /// Joins the lines of a paragraph or list item that were wrapped in the source, as Markdown does, so a changelog
+    /// wrapped at 120 columns reads as flowing text in a narrow alert. Code fences are left as they are.
+    public static func unwrapped(_ markdown: String) -> String {
+        var lines: [String] = []
+        var inCode = false
+        for line in markdown.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") { inCode.toggle(); lines.append(line); continue }
+            let startsBlock = trimmed.isEmpty || trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("#")
+                || trimmed.range(of: #"^\d+\. "#, options: .regularExpression) != nil
+            if !inCode, !startsBlock, let previous = lines.last, !previous.trimmingCharacters(in: .whitespaces).isEmpty,
+               !previous.trimmingCharacters(in: .whitespaces).hasPrefix("#"), !previous.hasPrefix("```") {
+                lines[lines.count - 1] = previous + " " + trimmed
+            } else {
+                lines.append(line)
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
 }

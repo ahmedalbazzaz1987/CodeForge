@@ -79,7 +79,7 @@ final class Updater {
     private func offer(_ release: Release, version: Version) async {
         let alert = NSAlert()
         alert.messageText = "CodeForge \(version) is available"
-        var notes = HoverText.plain(release.body ?? "")
+        var notes = HoverText.plain(HoverText.unwrapped(release.body ?? ""))
         if notes.count > 900 { notes = String(notes.prefix(900)) + "…" }
         alert.informativeText = "You have version \(currentVersion)." + (notes.isEmpty ? "" : "\n\n" + notes)
         alert.addButton(withTitle: "Install and Relaunch")
