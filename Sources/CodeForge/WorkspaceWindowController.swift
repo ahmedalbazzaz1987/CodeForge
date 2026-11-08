@@ -582,7 +582,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
     func setWorkspace(_ url: URL?) {
         // Like closing a solution in Visual Studio: the old project's tabs, errors and output go with it.
         if let previous = workspaceURL?.standardizedFileURL, previous != url?.standardizedFileURL {
-            guard closeProject(at: previous) else { return }
+            guard closeProject() else { return }
         }
         workspaceURL = url
         explorer.setRoot(url)
@@ -598,25 +598,21 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         saveSession()
     }
 
-    /// Closes the tabs of a project (asking about unsaved ones first) and clears what it left behind.
-    /// Returns false if the user cancelled, which leaves everything as it was.
-    private func closeProject(at folder: URL) -> Bool {
-        let inside = documents.filter { $0.url?.standardizedFileURL.path.hasPrefix(folder.path + "/") == true }
-        for document in inside where document.isDirty {
+    /// Closes every tab, as closing a solution in Visual Studio does (asking about unsaved ones first), and clears what
+    /// the project left behind. Files from outside the project go too: kept, they piled up from project to project
+    /// with their errors. Returns false if the user cancelled, which leaves everything as it was.
+    private func closeProject() -> Bool {
+        for document in documents where document.isDirty {
             if let index = documents.firstIndex(where: { $0 === document }) { select(index) }
             guard confirmDiscard(document) else { return false }
         }
         debugSession?.stop()
         runner.stop()
-        let remaining = current.flatMap { selected in inside.contains { $0 === selected } ? nil : selected }
-        for document in inside {
-            document.session = nil
-            designHosts[ObjectIdentifier(document)] = nil
-        }
-        documents.removeAll { document in inside.contains { $0 === document } }
+        for document in documents { document.session = nil }
+        designHosts = [:]
+        documents.removeAll()
         selectedIndex = -1
-        let kept = Set(documents.compactMap { $0.url?.standardizedFileURL })
-        liveDiagnostics = liveDiagnostics.filter { kept.contains($0.key) }
+        liveDiagnostics = [:]
         runDiagnostics = []
         runFolder = nil
         console.clear(nil)
@@ -625,7 +621,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         panel.findResults.set(summary: nil, matches: [])
         panel.taskList.set(summary: nil, matches: [])
         refreshDiagnostics()
-        select(remaining.flatMap { selected in documents.firstIndex { $0 === selected } } ?? (documents.isEmpty ? -1 : documents.count - 1))
+        select(-1)
         return true
     }
 

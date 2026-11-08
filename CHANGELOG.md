@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.2
+
+From re-checking the 0.11.1 fixes on the Mac.
+
+- **Opening another project closes every tab**, as closing a solution in Visual Studio does. Files from outside the
+  project (opened on their own, or left from earlier projects) stayed open before, and their errors stayed in the Error
+  List, so tabs piled up from project to project. Unsaved files are still asked about first.
+
 ## 0.12.1
 
 Fixes found while testing the Windows version, brought to the Mac.
