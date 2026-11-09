@@ -222,4 +222,4 @@ extensions, keywords, comment and string syntax, and run command.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GPL-3.0. Copyright © 2026 Ahmed Al-Bazzaz. You may use, change and share CodeForge; versions you share must stay open source under the same license. See [LICENSE](LICENSE).

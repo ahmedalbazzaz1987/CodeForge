@@ -52,7 +52,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
-  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Ahmed Al-Bazzaz. MIT License.</string>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Ahmed Al-Bazzaz. GPL-3.0 License.</string>
   ${REPO_KEY}
   <key>CFBundleDocumentTypes</key>
   <array>
