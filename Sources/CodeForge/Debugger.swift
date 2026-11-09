@@ -284,7 +284,7 @@ final class DebugSession {
         adapter.onEvent = { [weak self] event, body in self?.handle(event, body) }
         adapter.onExit = { [weak self] in self?.state = .ended }
         adapter.request("initialize", [
-            "clientID": "codeforge", "clientName": "CodeForge", "adapterID": configuration.adapterID,
+            "clientID": "codeforge", "clientName": "Kryndev", "adapterID": configuration.adapterID,
             "linesStartAt1": true, "columnsStartAt1": true, "pathFormat": "path",
             "supportsVariableType": true, "supportsRunInTerminalRequest": false,
         ])

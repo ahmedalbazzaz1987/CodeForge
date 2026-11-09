@@ -1,4 +1,8 @@
-# CodeForge — notes for Claude
+# Kryndev (formerly CodeForge) — notes for Claude
+
+The product is called **Kryndev** (renamed from CodeForge in 0.13.0). Only user-visible text says Kryndev: the
+repository, Swift targets, bundle ID (`io.github.ahmedalbazzaz1987.codeforge`), executable, Info.plist keys and settings
+paths keep "CodeForge" so installed copies keep updating and keep their settings. Don't rename those.
 
 CodeForge is a small, self-updating IDE modeled on Visual Studio Professional. The owner keeps asking for updates that
 bring it closer to VS Pro; the full history is in `CHANGELOG.md` and the features in `README.md`.

@@ -68,7 +68,7 @@ final class LanguageServer {
             "processId": ProcessInfo.processInfo.processIdentifier,
             "rootUri": rootURI,
             "workspaceFolders": [["uri": rootURI, "name": root.lastPathComponent]],
-            "clientInfo": ["name": "CodeForge"],
+            "clientInfo": ["name": "Kryndev"],
             "capabilities": [
                 "general": ["positionEncodings": ["utf-16"]],
                 "textDocument": [

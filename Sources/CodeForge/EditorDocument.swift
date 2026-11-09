@@ -42,7 +42,7 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
         case binary, tooLarge
         var errorDescription: String? {
             switch self {
-            case .binary: "This looks like a binary file, so CodeForge won't open it as text."
+            case .binary: "This looks like a binary file, so Kryndev won't open it as text."
             case .tooLarge: "The file is larger than 25 MB."
             }
         }

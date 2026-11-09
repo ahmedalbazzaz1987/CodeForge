@@ -12,7 +12,7 @@ final class StartPage: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        let title = NSTextField(labelWithString: "CodeForge")
+        let title = NSTextField(labelWithString: "Kryndev")
         title.font = .systemFont(ofSize: 30, weight: .light)
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let subtitle = NSTextField(labelWithString: (version.map { "Version \($0)" } ?? "Development build") + "  ·  by Ahmed Al-Bazzaz")

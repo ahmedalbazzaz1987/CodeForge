@@ -299,7 +299,7 @@ final class ServerExplorerView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         guard connection.kind != .sqlite, !connection.user.isEmpty, DatabaseService.passwords[connection.id] == nil else { return true }
         let alert = NSAlert()
         alert.messageText = "Password for \(connection.user)@\(connection.location)"
-        alert.informativeText = "CodeForge keeps it only until you quit. Leave it empty if the server doesn't need one."
+        alert.informativeText = "Kryndev keeps it only until you quit. Leave it empty if the server doesn't need one."
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Cancel")
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
@@ -524,7 +524,7 @@ final class AddConnectionSheet: NSObject {
         rows.file?.isHidden = !isFile
         rows.server.forEach { $0.isHidden = isFile }
         hint.stringValue = isFile ? "SQLite databases are built into macOS; nothing else is needed."
-            : "CodeForge uses the \(selectedKind.client ?? "") command-line client. \(selectedKind.installHint) The password isn't saved."
+            : "Kryndev uses the \(selectedKind.client ?? "") command-line client. \(selectedKind.installHint) The password isn't saved."
         // Fit the sheet to the rows that are showing.
         if let content = window.contentView {
             content.layoutSubtreeIfNeeded()

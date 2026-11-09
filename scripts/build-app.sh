@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds a release "CodeForge.app" in dist/.
+# Builds a release "Kryndev.app" in dist/ (the app was called CodeForge; its bundle ID, executable and settings keep
+# that name, so installed copies update in place and keep their settings).
 # Usage: scripts/build-app.sh [--sign "Developer ID Application: Name (TEAMID)"] [--repo owner/name]
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -18,7 +19,8 @@ done
 REPO_KEY=""
 [[ -n "$REPO" ]] && REPO_KEY="<key>CodeForgeRepository</key><string>${REPO}</string>"
 
-APP="dist/CodeForge.app"
+APP="dist/Kryndev.app"
+rm -rf dist/CodeForge.app
 echo "==> Compiling release build (arm64 + x86_64)"
 swift build -c release --arch arm64 --arch x86_64 --product CodeForge -Xswiftc -Osize
 BIN="$(swift build -c release --arch arm64 --arch x86_64 -Xswiftc -Osize --show-bin-path)/CodeForge"
@@ -33,14 +35,18 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 swift scripts/make-icon.swift "$ICONSET" >/dev/null
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+# Finder, Launchpad and Spotlight show this name even for copies still installed as CodeForge.app.
+mkdir -p "$APP/Contents/Resources/en.lproj"
+printf '"CFBundleDisplayName" = "Kryndev";\n"CFBundleName" = "Kryndev";\n' > "$APP/Contents/Resources/en.lproj/InfoPlist.strings"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>CodeForge</string>
-  <key>CFBundleDisplayName</key><string>CodeForge</string>
+  <key>CFBundleName</key><string>Kryndev</string>
+  <key>CFBundleDisplayName</key><string>Kryndev</string>
+  <key>LSHasLocalizedDisplayName</key><true/>
   <key>CFBundleIdentifier</key><string>io.github.ahmedalbazzaz1987.codeforge</string>
   <key>CFBundleExecutable</key><string>CodeForge</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>

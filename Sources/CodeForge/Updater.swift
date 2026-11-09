@@ -56,7 +56,7 @@ final class Updater {
                 if let release, let latest = Version(release.tag_name), let installed = Version(currentVersion), latest > installed {
                     await offer(release, version: latest)
                 } else if userInitiated {
-                    Prompt.show("You're up to date", message: "CodeForge \(currentVersion) is the newest version.", style: .informational)
+                    Prompt.show("You're up to date", message: "Kryndev \(currentVersion) is the newest version.", style: .informational)
                 }
             } catch {
                 if userInitiated { Prompt.show("Couldn't check for updates", message: error.localizedDescription) }
@@ -78,7 +78,7 @@ final class Updater {
     @MainActor
     private func offer(_ release: Release, version: Version) async {
         let alert = NSAlert()
-        alert.messageText = "CodeForge \(version) is available"
+        alert.messageText = "Kryndev \(version) is available"
         var notes = HoverText.plain(HoverText.unwrapped(release.body ?? ""))
         if notes.count > 900 { notes = String(notes.prefix(900)) + "…" }
         alert.informativeText = "You have version \(currentVersion)." + (notes.isEmpty ? "" : "\n\n" + notes)
@@ -105,10 +105,10 @@ final class Updater {
         do {
             let installed = Bundle.main.bundleURL
             if installed.path.contains("/AppTranslocation/") {
-                throw UpdateError("Move CodeForge to your Applications folder, open it from there, and try again.")
+                throw UpdateError("Move Kryndev to your Applications folder, open it from there, and try again.")
             }
             guard FileManager.default.isWritableFile(atPath: installed.deletingLastPathComponent().path) else {
-                throw UpdateError("CodeForge can't replace itself in “\(installed.deletingLastPathComponent().path)”.")
+                throw UpdateError("Kryndev can't replace itself in “\(installed.deletingLastPathComponent().path)”.")
             }
             let work = try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: installed, create: true)
             defer { try? FileManager.default.removeItem(at: work) }
@@ -126,7 +126,7 @@ final class Updater {
             try Self.run("/usr/bin/ditto", ["-x", "-k", archive.path, unpacked.path])
             guard let app = try FileManager.default.contentsOfDirectory(at: unpacked, includingPropertiesForKeys: nil).first(where: { $0.pathExtension == "app" }),
                   Bundle(url: app)?.bundleIdentifier == Bundle.main.bundleIdentifier else {
-                throw UpdateError("The download doesn't contain CodeForge.")
+                throw UpdateError("The download doesn't contain Kryndev.")
             }
             try Self.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
             _ = try FileManager.default.replaceItemAt(installed, withItemAt: app)
@@ -175,7 +175,7 @@ private final class ProgressPanel {
         let row = NSStackView(views: [spinner, label])
         row.edgeInsets = NSEdgeInsets(top: 0, left: 20, bottom: 0, right: 20)
         panel.contentView = row
-        panel.title = "Updating CodeForge"
+        panel.title = "Updating Kryndev"
         panel.center()
         panel.makeKeyAndOrderFront(nil)
     }

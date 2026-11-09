@@ -76,8 +76,8 @@ enum MainMenu {
     static func build() -> NSMenu {
         let main = NSMenu()
 
-        main.addSubmenu("CodeForge") { menu in
-            menu.add("About CodeForge", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
+        main.addSubmenu("Kryndev") { menu in
+            menu.add("About Kryndev", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
             menu.add("Check for Updates…", #selector(AppDelegate.checkForUpdates(_:)))
             menu.addItem(.separator())
             menu.add("Settings…", #selector(WorkspaceWindowController.showOptions(_:)), ",")
@@ -86,11 +86,11 @@ enum MainMenu {
             menu.add("Services", nil).submenu = services
             NSApp.servicesMenu = services
             menu.addItem(.separator())
-            menu.add("Hide CodeForge", #selector(NSApplication.hide(_:)), "h")
+            menu.add("Hide Kryndev", #selector(NSApplication.hide(_:)), "h")
             menu.add("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
             menu.add("Show All", #selector(NSApplication.unhideAllApplications(_:)))
             menu.addItem(.separator())
-            menu.add("Quit CodeForge", #selector(NSApplication.terminate(_:)), "q")
+            menu.add("Quit Kryndev", #selector(NSApplication.terminate(_:)), "q")
         }
 
         main.addSubmenu("File") { menu in
@@ -257,7 +257,7 @@ enum MainMenu {
         }
 
         main.addSubmenu("Help") { menu in
-            menu.add("CodeForge on GitHub", #selector(AppDelegate.openProjectPage(_:)))
+            menu.add("Kryndev on GitHub", #selector(AppDelegate.openProjectPage(_:)))
             NSApp.helpMenu = menu
         }
         return main

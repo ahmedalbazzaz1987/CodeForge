@@ -110,7 +110,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 780),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.minSize = NSSize(width: 720, height: 420)
-        window.title = "CodeForge"
+        window.title = "Kryndev"
         window.tabbingMode = .disallowed
         super.init(window: window)
         window.delegate = self
@@ -915,7 +915,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         tabBar.update(documents.map {
             TabBarView.Tab(title: $0.displayName, isDirty: $0.isDirty, toolTip: $0.url?.path)
         }, selected: selectedIndex)
-        window?.title = current?.displayName ?? "CodeForge"
+        window?.title = current?.displayName ?? "Kryndev"
         window?.subtitle = workspaceURL?.lastPathComponent ?? ""
         window?.representedURL = current?.url
         window?.isDocumentEdited = current?.isDirty ?? false
@@ -948,7 +948,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             // VB.NET and other languages without a server get CodeForge's own IntelliSense.
             let basic = current.map { SymbolParser.supports(languageId: $0.language.id) } ?? false
             intelliButton.isHidden = !basic
-            intelliButton.title = "IntelliSense: CodeForge"
+            intelliButton.title = "IntelliSense: Kryndev"
             intelliButton.toolTip = "Completions (⌃Space) from your project and common .NET classes, hover info, Go to Definition (F12), Find All References (⇧F12), Rename (F2) and Extract Method (⌥⌘M)"
             return
         }
@@ -961,7 +961,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             intelliButton.toolTip = nil
         } else if LanguageServerManager.shared.installCommand(for: spec) != nil {
             intelliButton.title = "Install \(current.language.name) IntelliSense…"
-            intelliButton.toolTip = "Installs \(spec.name) into CodeForge's own folder"
+            intelliButton.toolTip = "Installs \(spec.name) into Kryndev's own folder"
         } else {
             intelliButton.title = "IntelliSense: \(spec.name) not found"
             intelliButton.toolTip = spec.installHint
@@ -975,8 +975,8 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             return Prompt.show("\(spec.name) isn't installed", message: spec.installHint, style: .informational)
         }
         let message = spec.dotnetTool != nil
-            ? "CodeForge will use the .NET SDK to download \(spec.name) into its own folder (about 30 MB)."
-            : "CodeForge will run npm to download \(spec.npmPackages.joined(separator: ", ")) into its own folder (about 50 MB). You need Node.js (brew install node)."
+            ? "Kryndev will use the .NET SDK to download \(spec.name) into its own folder (about 30 MB)."
+            : "Kryndev will run npm to download \(spec.npmPackages.joined(separator: ", ")) into its own folder (about 50 MB). You need Node.js (brew install node)."
         guard Prompt.confirm("Install \(spec.name)?", message: message, button: "Install") else { return }
         pendingInstall = spec
         start(command, in: FileManager.default.homeDirectoryForCurrentUser)
@@ -1149,7 +1149,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard document.url != nil || saveAs(document), let file = document.url else { return }
         if document.isDirty { guard save(document) else { return } }
         guard let template = document.language.runCommand else {
-            return Prompt.show("CodeForge doesn't know how to run \(document.language.name) files",
+            return Prompt.show("Kryndev doesn't know how to run \(document.language.name) files",
                                message: "Choose Run ▸ Set Run Command… to enter the command for this folder.")
         }
         guard toolIsInstalled(for: template) else { return }
@@ -1477,13 +1477,13 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         let preferred = [".csproj", ".vbproj", ".fsproj", ".slnx", ".sln"]
         let file = names.first { name in preferred.contains { name.hasSuffix($0) } }
             ?? ["Package.swift", "Cargo.toml", "package.json", "go.mod", "CMakeLists.txt", "Makefile", "pyproject.toml"].first { names.contains($0) }
-        guard let file else { return Prompt.show("No project file", message: "This folder doesn't have a project file CodeForge recognizes.") }
+        guard let file else { return Prompt.show("No project file", message: "This folder doesn't have a project file Kryndev recognizes.") }
         open(workspaceURL.appendingPathComponent(file))
     }
 
     @objc func runAllTests(_ sender: Any?) {
         guard let workspaceURL, let command = BuildSystem.testCommand(in: workspaceURL) else {
-            return Prompt.show("No tests found", message: "CodeForge runs tests for .NET (dotnet test), Swift packages, Cargo, Go, npm (a \"test\" script), Python (pytest or unittest) and Makefiles with a test target.")
+            return Prompt.show("No tests found", message: "Kryndev runs tests for .NET (dotnet test), Swift packages, Cargo, Go, npm (a \"test\" script), Python (pytest or unittest) and Makefiles with a test target.")
         }
         saveAllDocuments(nil)
         runningLanguage = nil
@@ -1551,14 +1551,14 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if sayLibraryCantStart() { return }
         if let workspaceURL, BuildSystem.isMauiProject(in: workspaceURL) {
             return Prompt.show("Debugging isn't available for .NET MAUI apps yet",
-                               message: "CodeForge debugs other C#, VB.NET and F# programs. Use Start (⌘R) to run this app on your Mac.")
+                               message: "Kryndev debugs other C#, VB.NET and F# programs. Use Start (⌘R) to run this app on your Mac.")
         }
         if isDotNetProject, projectRunPlan != nil || ["csharp", "vb", "fsharp", "razor"].contains(current?.language.id ?? "") {
             return startDotNetDebugging()
         }
         if let language = current?.language.id, ["javascript", "typescript", "ruby", "php", "shell", "java", "kotlin", "lua"].contains(language), buildPlan()?.program == nil {
             return Prompt.show("Debugging isn't available for \(current!.language.name) yet",
-                               message: "CodeForge debugs Python, .NET (C#, VB.NET, F#) and compiled programs (C, C++, Objective-C, Swift, Rust and Go). Use Start (⌘R) to run this file.")
+                               message: "Kryndev debugs Python, .NET (C#, VB.NET, F#) and compiled programs (C, C++, Objective-C, Swift, Rust and Go). Use Start (⌘R) to run this file.")
         }
         build { [weak self] in self?.launchDebugger() }
     }
@@ -1571,7 +1571,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         let folder = workspaceURL.flatMap { file.path.hasPrefix($0.path + "/") ? $0 : nil } ?? file.deletingLastPathComponent()
         let launch = { [weak self] in
             guard let self, let configuration = DebugConfiguration.python(file: file, folder: folder) else {
-                return Prompt.show("Couldn't start the Python debugger", message: "CodeForge needs python3 and the debugpy package.")
+                return Prompt.show("Couldn't start the Python debugger", message: "Kryndev needs python3 and the debugpy package.")
             }
             startSession(configuration, title: file.lastPathComponent)
         }
@@ -1579,7 +1579,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         guard let command = PythonDebugging.installCommand else {
             return Prompt.show("Python wasn't found", message: "Install Python 3 (for example: brew install python), then try again.")
         }
-        guard Prompt.confirm("Install the Python debugger?", message: "CodeForge will use pip to download debugpy (about 20 MB) into its own folder. This happens once.",
+        guard Prompt.confirm("Install the Python debugger?", message: "Kryndev will use pip to download debugpy (about 20 MB) into its own folder. This happens once.",
                              button: "Install") else { return }
         afterBuild = launch
         start(command, in: FileManager.default.homeDirectoryForCurrentUser)
@@ -1597,7 +1597,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
                 return Prompt.show("The program wasn't found", message: "The build didn't produce \(project.deletingPathExtension().lastPathComponent).dll in bin/Debug.")
             }
             guard let configuration = DebugConfiguration.dotnet(assembly: assembly, project: project) else {
-                return Prompt.show("Couldn't start the .NET debugger", message: "CodeForge needs the .NET SDK (brew install dotnet) and netcoredbg.")
+                return Prompt.show("Couldn't start the .NET debugger", message: "Kryndev needs the .NET SDK (brew install dotnet) and netcoredbg.")
             }
             openedBrowserForRun = false
             startSession(configuration, title: assembly.lastPathComponent)
@@ -1613,7 +1613,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         }
         if DotNetDebugging.isInstalled { return build() }
         guard Prompt.confirm("Install the .NET debugger?",
-                             message: "CodeForge debugs C#, VB.NET and F# with netcoredbg, Samsung's open-source .NET debugger (MIT license). It downloads it from GitHub (about 15 MB) into its own folder. This happens once.",
+                             message: "Kryndev debugs C#, VB.NET and F# with netcoredbg, Samsung's open-source .NET debugger (MIT license). It downloads it from GitHub (about 15 MB) into its own folder. This happens once.",
                              button: "Install") else { return }
         afterBuild = build
         start(DotNetDebugging.installCommand, in: FileManager.default.homeDirectoryForCurrentUser)
@@ -1631,7 +1631,7 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
             return startSession(configuration, title: path)
         }
         guard let configuration = DebugConfiguration.lldb(program: URL(fileURLWithPath: path), folder: folder) else {
-            return Prompt.show("Couldn't start the debugger", message: "CodeForge uses lldb-dap from Xcode. Install Xcode, then run: xcode-select -s /Applications/Xcode.app")
+            return Prompt.show("Couldn't start the debugger", message: "Kryndev uses lldb-dap from Xcode. Install Xcode, then run: xcode-select -s /Applications/Xcode.app")
         }
         startSession(configuration, title: path)
         if current?.language.id == "go" {
@@ -1717,10 +1717,10 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
 
     private func chooseDebugProgram(thenStart: Bool) {
         guard let key = buildKey("debugProgram") else {
-            return Prompt.show("No program to debug", message: "The build didn't produce a program CodeForge could find. Open the project folder, or debug a single C, C++, Swift or Rust file.")
+            return Prompt.show("No program to debug", message: "The build didn't produce a program Kryndev could find. Open the project folder, or debug a single C, C++, Swift or Rust file.")
         }
         let panel = NSOpenPanel()
-        panel.message = "Choose the program to debug. CodeForge remembers it for this folder."
+        panel.message = "Choose the program to debug. Kryndev remembers it for this folder."
         panel.directoryURL = workspaceURL
         panel.treatsFilePackagesAsDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }

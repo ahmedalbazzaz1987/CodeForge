@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0
+
+- **CodeForge is now Kryndev**, with a new icon. Only the name changed: features, settings, projects and updates stay
+  as they were, and the update installs over the existing copy (Finder shows it as Kryndev even if its file is still
+  CodeForge.app).
+
 ## 0.12.4
 
 - Update messages show the release notes as flowing text, instead of breaking lines where the changelog wraps.

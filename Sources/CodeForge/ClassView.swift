@@ -351,7 +351,7 @@ final class ObjectBrowserWindow: NSObject, NSOutlineViewDataSource, NSOutlineVie
         let query = search.stringValue.lowercased()
         if let type = node.dotNetType {
             shownMembers = type.members.map { (($0.isMethod ? CodeSymbol.Kind.method : .property), $0.name, ($0.isShared ? "Shared " : "") + $0.signature, nil) }
-            details.string = "\(type.kind.title) \(type.name)\n    Member of \(type.namespace)\n\n\(type.members.count) members in CodeForge's catalog of common .NET classes."
+            details.string = "\(type.kind.title) \(type.name)\n    Member of \(type.namespace)\n\n\(type.members.count) members in Kryndev's catalog of common .NET classes."
         } else if let symbol = node.symbol {
             shownMembers = ProjectIndex.shared.symbols.filter { $0.container == symbol.name && $0.namespace == symbol.namespace && !$0.kind.isType }
                 .map { ($0.kind, $0.name, $0.signature, $0) }

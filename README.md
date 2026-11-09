@@ -1,11 +1,13 @@
-# CodeForge
+# Kryndev
+
+> Formerly **CodeForge**. Only the name changed: settings, updates and the GitHub repositories stay the same.
 
 A small, fast, native IDE for macOS, inspired by Visual Studio: a Start page with project templates, a Solution
 Explorer-style file tree, editor tabs, an **Output / Error List / Terminal** panel, and a green **Start** button that
 runs your code. The whole app is about **1 MB**, has no third-party dependencies, and updates itself from GitHub
 Releases.
 
-![CodeForge in dark mode with CodeLens hints in the editor and the Git Changes panel](docs/screenshot.png)
+![Kryndev in dark mode with CodeLens hints in the editor and the Git Changes panel](docs/screenshot.png)
 
 - **Native and light.** Written in Swift with AppKit. It starts instantly and runs on Apple Silicon and Intel Macs
   with macOS 14 or later.
@@ -38,7 +40,7 @@ Releases.
   C#, VB.NET, F#, Razor, Go, Rust, Ruby, PHP, Shell, Lua, SQL, HTML/XML, CSS, JSON, YAML, TOML, Markdown, Makefile and Dockerfile.
 - **IntelliSense.** Completions, quick info on hover, Go to Definition (F12 / ⌘-click), Find All References (⇧F12),
   Rename (F2) and live error squiggles, powered by standard language servers. VB.NET, which has no language server, gets
-  CodeForge's own IntelliSense: member lists from your project and common .NET classes, hover info and Go to Definition.
+  Kryndev's own IntelliSense: member lists from your project and common .NET classes, hover info and Go to Definition.
 - **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
   Debug C#, VB.NET and F# (netcoredbg), Python (debugpy) and C, C++, Objective-C, Swift and Rust (LLDB), and Go (Delve when it's installed, with variables; otherwise LLDB, which stops and steps but can't show them): breakpoints (F9), stepping
   (F10 / F11 / ⇧F11), Locals, Call Stack and an expression evaluator.
@@ -50,14 +52,14 @@ Releases.
 - **Built-in terminal.** Run `git`, `npm`, `pip` and other commands in the project folder.
 - **Editor comforts.** Line numbers, current-line highlight, auto-indent, toggle comment, indent/outdent, find and
   replace, go to line and Quick Open (⌘P).
-- **Self-updating.** CodeForge checks GitHub Releases once a day and can install a new version and relaunch.
+- **Self-updating.** Kryndev checks GitHub Releases once a day and can install a new version and relaunch.
 
 ## Install
 
-1. Download `CodeForge-<version>.zip` from the [latest release](https://github.com/ahmedalbazzaz1987/CodeForge/releases/latest).
-2. Unzip it and move **CodeForge.app** to your **Applications** folder.
+1. Download `Kryndev-<version>.zip` from the [latest release](https://github.com/ahmedalbazzaz1987/CodeForge/releases/latest).
+2. Unzip it and move **Kryndev.app** to your **Applications** folder.
 3. The app isn't notarized by Apple yet, so macOS will block it the first time. Open **System Settings ▸ Privacy &
-   Security**, scroll down, and click **Open Anyway** next to the CodeForge message. You only need to do this once;
+   Security**, scroll down, and click **Open Anyway** next to the Kryndev message. You only need to do this once;
    updates installed from inside the app don't ask again.
 
 ### Build from source
@@ -68,12 +70,12 @@ You need Xcode (or the Swift 6 toolchain).
 git clone https://github.com/ahmedalbazzaz1987/CodeForge.git
 cd CodeForge
 scripts/build-app.sh
-open dist/CodeForge.app
+open dist/Kryndev.app
 ```
 
 `swift test` runs the unit tests. To work on the code in Xcode, open `Package.swift`.
 
-## Using CodeForge
+## Using Kryndev
 
 | Action | Shortcut |
 | --- | --- |
@@ -114,7 +116,7 @@ language menu in the status bar changes how the current file is highlighted and 
 
 ### IntelliSense
 
-CodeForge talks to standard language servers. The status bar shows which one is active for the current file.
+Kryndev talks to standard language servers. The status bar shows which one is active for the current file.
 
 | Language | Server | How to get it |
 | --- | --- | --- |
@@ -126,17 +128,17 @@ CodeForge talks to standard language servers. The status bar shows which one is 
 | Go | gopls | `brew install gopls` |
 | Rust | rust-analyzer | `brew install rust-analyzer` |
 | Java | Eclipse JDT LS | `brew install jdtls` |
-| VB.NET (and others without a server) | CodeForge's own | Built in |
+| VB.NET (and others without a server) | Kryndev's own | Built in |
 
-Servers that CodeForge installs live in `~/Library/Application Support/<bundle id>/LanguageServers`. Find All
+Servers that Kryndev installs live in `~/Library/Application Support/<bundle id>/LanguageServers`. Find All
 References in Swift needs a built Swift package (the index comes from the build).
 
 ### Debugging
 
-Press **F5**. For .NET projects (C#, VB.NET, F#, ASP.NET Core), CodeForge builds the Debug configuration and runs the
+Press **F5**. For .NET projects (C#, VB.NET, F#, ASP.NET Core), Kryndev builds the Debug configuration and runs the
 program under [netcoredbg](https://github.com/Samsung/netcoredbg), Samsung's open-source .NET debugger; the first time,
 it offers to download it (about 15 MB) into its own folder. (Microsoft's own .NET debugger is licensed only for
-Microsoft's products.) For Python files, CodeForge runs the script under [debugpy](https://github.com/microsoft/debugpy); the
+Microsoft's products.) For Python files, Kryndev runs the script under [debugpy](https://github.com/microsoft/debugpy); the
 first time, it offers to install debugpy into its own folder (it needs `python3`). For compiled languages, it builds the
 project (or the current file) with debug information and starts it under LLDB, using `lldb-dap` from Xcode. When it stops at a breakpoint, the **Debug** tab shows local variables and the call stack,
 and you can evaluate expressions.
@@ -144,7 +146,7 @@ and you can evaluate expressions.
 The first time you debug a compiled program, macOS asks for your password to allow a debugger to control the program (the same prompt
 Xcode shows). To skip that prompt for good, run `sudo DevToolsSecurity -enable` once in Terminal.
 
-If CodeForge can't tell which program the build made, it asks once (Debug ▸ Set Program to Debug…).
+If Kryndev can't tell which program the build made, it asks once (Debug ▸ Set Program to Debug…).
 
 ### Git and CodeLens
 
@@ -200,7 +202,7 @@ Version numbers live in `VERSION`, and release notes in `CHANGELOG.md`.
 3. Run `scripts/release.sh`. It runs the tests, builds the app, zips it, writes a SHA-256 checksum, tags the commit
    and creates the GitHub release with both files.
 
-Installed copies of CodeForge see the new release within a day, or right away with **CodeForge ▸ Check for
+Installed copies of Kryndev see the new release within a day, or right away with **Kryndev ▸ Check for
 Updates…**. The updater only installs a download whose checksum matches, whose bundle identifier matches, and whose
 code signature verifies.
 
@@ -222,4 +224,4 @@ extensions, keywords, comment and string syntax, and run command.
 
 ## License
 
-GPL-3.0. Copyright © 2026 Ahmed Al-Bazzaz. You may use, change and share CodeForge; versions you share must stay open source under the same license. See [LICENSE](LICENSE).
+GPL-3.0. Copyright © 2026 Ahmed Al-Bazzaz. You may use, change and share Kryndev; versions you share must stay open source under the same license. See [LICENSE](LICENSE).
