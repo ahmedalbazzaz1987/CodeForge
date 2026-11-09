@@ -1,6 +1,6 @@
 # Kryndev
 
-> Formerly **CodeForge**. Only the name changed: settings, updates and the GitHub repositories stay the same.
+> Formerly **CodeForge**. Only the name changed: settings, updates and the GitHub repositories stay the same. See the [renaming notice](RENAMING-NOTICE.md).
 
 A small, fast, native IDE for macOS, inspired by Visual Studio: a Start page with project templates, a Solution
 Explorer-style file tree, editor tabs, an **Output / Error List / Terminal** panel, and a green **Start** button that
