@@ -252,8 +252,12 @@ final class ErrorListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let text = diagnostics.indices.contains(row) ? diagnostics[row].explanation : nil
         explanation.stringValue = text.map { "💡 " + $0 } ?? ""
         explanation.isHidden = text == nil
-        explanation.preferredMaxLayoutWidth = max(bounds.width - 20, 200)
-        explanationHeight.constant = text == nil ? 0 : min(explanation.fittingSize.height, 60)
+        // Measured from the text itself: the label's fitting size would honor its own height constraint (0 while hidden).
+        let width = max(bounds.width - 20, 200)
+        explanation.preferredMaxLayoutWidth = width
+        let height = explanation.attributedStringValue.boundingRect(with: NSSize(width: width, height: 1000),
+                                                                    options: [.usesLineFragmentOrigin, .usesFontLeading]).height
+        explanationHeight.constant = text == nil ? 0 : min(ceil(height) + 2, 60)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { diagnostics.count }

@@ -1876,6 +1876,13 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if let current { intelliSense.showParameterInfo(in: current.textView) }
     }
 
+    /// Shows the Error List with the first error that has a plain-language explanation selected (for snapshots).
+    func debugSelectExplainedError() {
+        panel.show(.errors)
+        if let row = panel.errors.diagnostics.firstIndex(where: { $0.explanation != nil }) { panel.errors.select(row: row) }
+        print("--- ERROR BAR: \(panel.errors.shownExplanation ?? "none")")
+    }
+
     @objc func extractMethod(_ sender: Any?) {
         if let current { intelliSense.extractMethod(in: current.textView) }
     }

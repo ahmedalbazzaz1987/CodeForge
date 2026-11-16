@@ -16,6 +16,7 @@ import CodeForgeKit
 ///   CF_FIND=text               run Find in Files for text
 ///   CF_TABLE=name              show the first rows of a table from the first Server Explorer connection
 ///   CF_PARAMS=text             put the cursor after `text` and show Parameter Info
+///   CF_ERRORS=1                show the Error List with the first explained error selected
 enum DevSnapshot {
     static func runIfRequested(_ controller: WorkspaceWindowController) {
         let env = ProcessInfo.processInfo.environment
@@ -182,6 +183,9 @@ enum DevSnapshot {
                 field.sendAction(field.action, to: field.target)
             }
             delay = 4
+        }
+        if env["CF_ERRORS"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(delay - 1, 0.5)) { controller.debugSelectExplainedError() }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             if let textView = find(controller.window!.contentView!, CodeTextView.self) { print("LENSES:", textView.lenses) }
