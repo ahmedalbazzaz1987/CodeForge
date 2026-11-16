@@ -4,6 +4,7 @@ import CodeForgeKit
 
 /// Debug builds only: renders the window to a PNG and quits, for checking layouts without a screen.
 ///   CF_SNAPSHOT=/path/out.png  where to write the image (required)
+///   CF_OPEN=folder;file        open these first
 ///   CF_DARK=1                  dark appearance
 ///   CF_RUN=1                   press Run first and wait for it
 ///   CF_ACTION=selector:        send one more action to the window controller first (e.g. showTerminal:)
@@ -20,6 +21,8 @@ import CodeForgeKit
 enum DevSnapshot {
     static func runIfRequested(_ controller: WorkspaceWindowController) {
         let env = ProcessInfo.processInfo.environment
+        // Folders and files to open first, separated by ";" (like the Windows version's CF_OPEN).
+        for path in (env["CF_OPEN"] ?? "").split(separator: ";") { controller.open(URL(fileURLWithPath: String(path))) }
         if let word = env["CF_LSP_PROBE"] { probe(controller, word: word) }
         guard let path = env["CF_SNAPSHOT"] else { return }
         if env["CF_DARK"] != nil { NSApp.appearance = NSAppearance(named: .darkAqua) }
