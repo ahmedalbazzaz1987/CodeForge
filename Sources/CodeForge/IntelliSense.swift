@@ -1037,9 +1037,10 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
             text.append(NSAttributedString(string: "\n\n" + body, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]))
         }
         detailText.attributedStringValue = text
-        detailText.preferredMaxLayoutWidth = 310
-        let size = detailText.fittingSize
-        let height = min(size.height + 16, 280)
+        detailText.preferredMaxLayoutWidth = 306
+        // Measured from the text itself: the field's fitting size can come out a line short.
+        let textHeight = ceil(text.boundingRect(with: NSSize(width: 306, height: 4000), options: [.usesLineFragmentOrigin, .usesFontLeading]).height)
+        let height = min(textHeight + 24, 280)
         let list = panel.frame
         var frame = NSRect(x: list.maxX + 4, y: list.maxY - height, width: 330, height: height)
         if let screen = window.screen?.visibleFrame, frame.maxX > screen.maxX { frame.origin.x = list.minX - 4 - 330 }
@@ -1225,9 +1226,9 @@ final class ParameterInfoPopup {
         }
         self.label.attributedStringValue = text
         self.label.preferredMaxLayoutWidth = 560
-        let size = self.label.fittingSize
-        let width = min(size.width, 560) + 18
-        let height = size.height + 12
+        let bounds = text.boundingRect(with: NSSize(width: 560, height: 4000), options: [.usesLineFragmentOrigin, .usesFontLeading])
+        let width = min(ceil(bounds.width), 560) + 24
+        let height = ceil(bounds.height) + 16
         // Above the line, like Visual Studio, so the completion list below stays clear.
         let caret = textView.firstRect(forCharacterRange: NSRange(location: min(anchor, (textView.string as NSString).length), length: 0), actualRange: nil)
         var frame = NSRect(x: caret.minX - 8, y: caret.maxY + 2, width: width, height: height)

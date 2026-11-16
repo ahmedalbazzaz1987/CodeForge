@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.1
+
+- The Error List shows the plain-language explanation of the selected error (it was measured as zero lines high).
+- The explanation beside the completion list shows all its lines (the last one was cut off).
+
 ## 0.14.0
 
 IntelliSense that helps people learning to program, in every language:
