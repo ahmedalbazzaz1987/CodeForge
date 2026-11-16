@@ -13,8 +13,11 @@ public struct Diagnostic: Equatable, Hashable, Sendable {
     /// Where the problem ends, when the tool reports it (1-based, end exclusive).
     public let endLine: Int?
     public let endColumn: Int?
+    /// The tool's code for the problem (CS0103, E0308…), when it gives one apart from the message.
+    public let code: String?
 
-    public init(severity: Severity, message: String, file: String, line: Int, column: Int? = nil, endLine: Int? = nil, endColumn: Int? = nil) {
+    public init(severity: Severity, message: String, file: String, line: Int, column: Int? = nil, endLine: Int? = nil, endColumn: Int? = nil,
+                code: String? = nil) {
         self.severity = severity
         self.message = message
         self.file = file
@@ -22,6 +25,12 @@ public struct Diagnostic: Equatable, Hashable, Sendable {
         self.column = column
         self.endLine = endLine
         self.endColumn = endColumn
+        self.code = code
+    }
+
+    /// What the problem means and how to fix it, in plain words (nil when there's no explanation for it).
+    public var explanation: String? {
+        ErrorExplanations.explain(message, code: code, languageId: Languages.forFile(named: (file as NSString).lastPathComponent).id)
     }
 
     public func url(relativeTo folder: URL) -> URL {

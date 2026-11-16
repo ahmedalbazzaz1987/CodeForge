@@ -17,6 +17,10 @@ final class LanguageServer {
     /// The server waits to be asked for diagnostics (`textDocument/diagnostic`) instead of publishing them.
     private(set) var pullsDiagnostics = false
     private(set) var resolvesCodeActions = false
+    /// Characters that open (or move along) Parameter Info; nil if the server has no signature help.
+    private(set) var signatureTriggerCharacters: Set<String>?
+    /// The server fills in a completion item's documentation when asked (completionItem/resolve).
+    private(set) var resolvesCompletions = false
     private var readyActions: [() -> Void] = []
 
     /// (file, diagnostics) whenever the server publishes diagnostics.
@@ -73,7 +77,10 @@ final class LanguageServer {
                 "general": ["positionEncodings": ["utf-16"]],
                 "textDocument": [
                     "synchronization": ["didSave": true, "dynamicRegistration": false],
-                    "completion": ["completionItem": ["snippetSupport": false, "documentationFormat": ["plaintext", "markdown"]]],
+                    "completion": ["completionItem": ["snippetSupport": true, "documentationFormat": ["plaintext", "markdown"],
+                                                       "resolveSupport": ["properties": ["documentation", "detail"]]]],
+                    "signatureHelp": ["signatureInformation": ["documentationFormat": ["plaintext", "markdown"],
+                                                               "parameterInformation": ["labelOffsetSupport": true], "activeParameterSupport": true]],
                     "hover": ["contentFormat": ["plaintext", "markdown"]],
                     "definition": ["linkSupport": true],
                     "references": [:],
@@ -99,6 +106,11 @@ final class LanguageServer {
             }
             pullsDiagnostics = capabilities?["diagnosticProvider"] != nil
             resolvesCodeActions = (capabilities?["codeActionProvider"] as? [String: Any])?["resolveProvider"] as? Bool ?? false
+            resolvesCompletions = (capabilities?["completionProvider"] as? [String: Any])?["resolveProvider"] as? Bool ?? false
+            if let signatureHelp = capabilities?["signatureHelpProvider"] as? [String: Any] {
+                let characters = (signatureHelp["triggerCharacters"] as? [String] ?? ["(", ","]) + (signatureHelp["retriggerCharacters"] as? [String] ?? [])
+                signatureTriggerCharacters = Set(characters.filter { !$0.isEmpty })
+            }
             write(["jsonrpc": "2.0", "method": "initialized", "params": [String: Any]()])
             isReady = true
             queued.forEach(write)
@@ -199,9 +211,10 @@ final class LanguageServer {
                   let start = range["start"] as? [String: Any], let end = range["end"] as? [String: Any],
                   let line = start["line"] as? Int, let character = start["character"] as? Int else { return nil }
             let message = (item["message"] as? String ?? "").components(separatedBy: "\n").first ?? ""
+            let code = (item["code"] as? String) ?? (item["code"] as? Int).map(String.init)
             return Diagnostic(severity: severity == 1 ? .error : .warning, message: message, file: url.path,
                               line: line + 1, column: character + 1,
-                              endLine: (end["line"] as? Int).map { $0 + 1 }, endColumn: (end["character"] as? Int).map { $0 + 1 })
+                              endLine: (end["line"] as? Int).map { $0 + 1 }, endColumn: (end["character"] as? Int).map { $0 + 1 }, code: code)
         }
     }
 }

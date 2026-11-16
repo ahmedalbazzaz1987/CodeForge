@@ -1871,6 +1871,11 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         if let current { intelliSense.showQuickActions(in: current.textView) }
     }
 
+    /// Parameter Info (⇧⌘Space, Ctrl+Shift+Space in Visual Studio).
+    @objc func showParameterInfo(_ sender: Any?) {
+        if let current { intelliSense.showParameterInfo(in: current.textView) }
+    }
+
     @objc func extractMethod(_ sender: Any?) {
         if let current { intelliSense.extractMethod(in: current.textView) }
     }
@@ -2107,7 +2112,9 @@ final class WorkspaceWindowController: NSWindowController, NSWindowDelegate, NSS
         print("--- FRAMES: \(console.debugFrames)")
         print("--- COLORS: \(console.debugColoredLines)")
         print("--- OUTPUT ---\n\(console.text)\n--- STATUS: \(runStatus.stringValue)")
-        print("--- ERRORS: \(panel.errors.diagnostics.map { "\(($0.file as NSString).lastPathComponent):\($0.line) \($0.message)" })")
+        print("--- ERRORS: \(panel.errors.diagnostics.map { "\(($0.file as NSString).lastPathComponent):\($0.line) \($0.message)" + ($0.explanation.map { " | " + $0 } ?? "") })")
+        print("--- PARAMINFO: \(intelliSense.parameterInfoText ?? "none")")
+        print("--- EXPLANATION: \(intelliSense.completionExplanation ?? "none")")
         print("--- TABS: \(documents.map(\.displayName)) focus: \(window?.firstResponder.map { String(describing: type(of: $0)) } ?? "none")")
     }
 

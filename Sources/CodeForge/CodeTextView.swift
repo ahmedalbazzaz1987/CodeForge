@@ -24,6 +24,7 @@ final class CodeTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawLenses(in: rect)
+        drawSnippetFields(in: rect)
         guard let layoutManager, selectedRange().length == 0 else { return }
         let location = selectedRange().location
         let length = (string as NSString).length
@@ -69,11 +70,130 @@ final class CodeTextView: NSTextView {
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
         needsDisplay = true
+        if !stillSelecting { assistant?.textViewDidChangeSelection(self) }
+    }
+
+    // MARK: Snippet fields
+
+    /// The snippet being filled in: Tab and ⇧Tab move between its fields, Return or Escape finishes it.
+    private var snippetSession: SnippetSession?
+    private var applyingMirrors = false
+    private var mirrorsPending = false
+    private var undoObservers: [NSObjectProtocol] = []
+
+    var isFillingSnippet: Bool { snippetSession != nil }
+
+    private func startSnippet(_ session: SnippetSession) {
+        snippetSession = session
+        setSelectedRange(session.current)
+        if undoObservers.isEmpty {
+            // Undo and Redo change the text behind the session's back: stop rather than guess where the fields went.
+            for name in [NSNotification.Name.NSUndoManagerWillUndoChange, .NSUndoManagerWillRedoChange] {
+                undoObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated {
+                        guard let self, (note.object as? UndoManager) === undoManager else { return }
+                        endSnippet()
+                    }
+                })
+            }
+        }
+        needsDisplay = true
+    }
+
+    func endSnippet() {
+        guard snippetSession != nil else { return }
+        snippetSession = nil
+        needsDisplay = true
+    }
+
+    /// Tab: the next field; after the last one, where the snippet's `$0` is (or its end).
+    private func nextSnippetField(_ forward: Bool) {
+        guard var session = snippetSession else { return }
+        let moved = forward ? session.next() : session.previous()
+        guard moved else {
+            if forward { finishSnippet() }
+            return
+        }
+        snippetSession = session
+        setSelectedRange(session.current)
+        if session.currentIndex == 0 { endSnippet() }
+        needsDisplay = true
+    }
+
+    /// Return or the last Tab: the caret goes where the snippet says (`$0`), and the fields are done.
+    private func finishSnippet() {
+        guard let session = snippetSession else { return }
+        if let end = session.fields.first(where: { $0.index == 0 }) { setSelectedRange(NSRange(location: end.location, length: 0)) }
+        endSnippet()
+    }
+
+    override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        guard super.shouldChangeText(in: affectedCharRange, replacementString: replacementString) else { return false }
+        if var session = snippetSession {
+            if session.edit(affectedCharRange, replacementLength: (replacementString ?? "").utf16.count) {
+                snippetSession = session
+                if !applyingMirrors { mirrorsPending = true }
+            } else {
+                endSnippet()
+            }
+        }
+        return true
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        guard mirrorsPending else { return }
+        mirrorsPending = false
+        updateMirrors()
+    }
+
+    /// Copies of the field being typed in follow it: `for (int i = 0; i < n; i++)` renames all three i's.
+    private func updateMirrors() {
+        guard let session = snippetSession else { return }
+        let edits = session.mirrorEdits(in: string as NSString)
+        guard !edits.isEmpty else { return }
+        let selection = selectedRange()
+        let field = session.current
+        let offsetInField = selection.location - field.location
+        applyingMirrors = true
+        for (range, value) in edits where shouldChangeText(in: range, replacementString: value) {
+            textStorage?.replaceCharacters(in: range, with: value)
+            didChangeText()
+        }
+        applyingMirrors = false
+        if let moved = snippetSession?.current, offsetInField >= 0 {
+            super.setSelectedRanges([NSValue(range: NSRange(location: moved.location + offsetInField, length: selection.length))],
+                                    affinity: .downstream, stillSelecting: false)
+        }
+    }
+
+    /// A box around each field still to fill in, like Visual Studio's snippet fields.
+    private func drawSnippetFields(in rect: NSRect) {
+        guard let session = snippetSession, let layoutManager, let textContainer else { return }
+        let length = (string as NSString).length
+        Theme.separator.setStroke()
+        for field in session.fields where field.index > 0 && NSMaxRange(field.range) <= length {
+            let glyphs = layoutManager.glyphRange(forCharacterRange: field.range, actualCharacterRange: nil)
+            var box = field.length > 0 ? layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+                : NSRect(origin: layoutManager.location(forGlyphAt: min(glyphs.location, max(layoutManager.numberOfGlyphs - 1, 0))), size: .zero)
+            if field.length == 0 {
+                let line = layoutManager.lineFragmentRect(forGlyphAt: min(glyphs.location, max(layoutManager.numberOfGlyphs - 1, 0)), effectiveRange: nil)
+                box = NSRect(x: line.minX + box.minX, y: line.minY, width: 2, height: line.height)
+            }
+            box.origin.x += textContainerOrigin.x
+            box.origin.y += textContainerOrigin.y
+            box = box.insetBy(dx: -1.5, dy: 0.5)
+            guard box.intersects(rect) else { continue }
+            let path = NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2)
+            path.lineWidth = field.index == session.currentIndex ? 1.5 : 1
+            path.stroke()
+        }
     }
 
     // MARK: Typing
 
     override func insertNewline(_ sender: Any?) {
+        if snippetSession != nil { return finishSnippet() }
         let ns = string as NSString
         let selection = selectedRange()
         let lineStart = ns.lineRange(for: NSRange(location: selection.location, length: 0)).location
@@ -124,6 +244,8 @@ final class CodeTextView: NSTextView {
 
     override func doCommand(by selector: Selector) {
         if assistant?.textView(self, handle: selector) == true { return }
+        // Escape finishes filling in a snippet (rather than opening the completion list).
+        if selector == #selector(cancelOperation(_:)), snippetSession != nil { return endSnippet() }
         super.doCommand(by: selector)
     }
 
@@ -193,6 +315,7 @@ final class CodeTextView: NSTextView {
     }
 
     override func insertTab(_ sender: Any?) {
+        if snippetSession != nil { return nextSnippetField(true) }
         if assistant?.textViewExpandSnippet(self) == true { return }
         let selection = selectedRange()
         if (string as NSString).substring(with: selection).contains("\n") {
@@ -203,6 +326,7 @@ final class CodeTextView: NSTextView {
     }
 
     override func insertBacktab(_ sender: Any?) {
+        if snippetSession != nil { return nextSnippetField(false) }
         outdentSelection(sender)
     }
 
@@ -229,6 +353,7 @@ final class CodeTextView: NSTextView {
         let lineStart = ns.lineRange(for: NSRange(location: selection.location, length: 0)).location
         let indent = ns.substring(with: NSRange(location: lineStart, length: selection.location - lineStart)).prefix { $0 == " " || $0 == "\t" }
         var (text, cursor) = item.expanded(indent: String(indent))
+        let fields = SnippetTemplate.expand(item.snippet, indent: String(indent)).fields
         // At the start of a line that already has code, give the new item its own line.
         let lineEnd = NSMaxRange(ns.lineRange(for: NSRange(location: selection.location, length: 0)))
         let after = ns.substring(with: NSRange(location: NSMaxRange(selection), length: max(lineEnd - NSMaxRange(selection), 0)))
@@ -236,10 +361,16 @@ final class CodeTextView: NSTextView {
         if indent.count == selection.location - lineStart, !after.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             text += "\n" + indent
         }
+        endSnippet()
         insertText(text, replacementRange: selection)
         setSelectedRange(NSRange(location: selection.location + cursor, length: 0))
         lastToolboxInsert = (selection.location + itemLength, (string as NSString).length, selection.location + cursor)
         window?.makeFirstResponder(self)
+        // Fields to fill in: the first is selected, and Tab goes on to the next.
+        if let session = SnippetSession(fields: fields, base: selection.location) {
+            lastToolboxInsert = nil
+            startSnippet(session)
+        }
     }
 
     @objc func indentSelection(_ sender: Any?) {

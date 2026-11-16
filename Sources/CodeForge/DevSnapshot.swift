@@ -15,6 +15,7 @@ import CodeForgeKit
 ///   CF_ANSWER=text             answer every prompt with this text ("" keeps the suggested value) and confirm every question
 ///   CF_FIND=text               run Find in Files for text
 ///   CF_TABLE=name              show the first rows of a table from the first Server Explorer connection
+///   CF_PARAMS=text             put the cursor after `text` and show Parameter Info
 enum DevSnapshot {
     static func runIfRequested(_ controller: WorkspaceWindowController) {
         let env = ProcessInfo.processInfo.environment
@@ -165,7 +166,16 @@ enum DevSnapshot {
             }
             delay = max(delay, 5)
         }
-        if let command = env["CF_TERMINAL"] {
+        if let text = env["CF_PARAMS"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                guard let textView = find(controller.window!.contentView!, CodeTextView.self) else { return }
+                let range = (textView.string as NSString).range(of: text)
+                textView.setSelectedRange(NSRange(location: NSMaxRange(range), length: 0))
+                controller.showParameterInfo(nil)
+            }
+            delay = max(delay, 5)
+        }
+                if let command = env["CF_TERMINAL"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 guard let field = find(controller.window!.contentView!, TerminalView.self)?.inputField else { return }
                 field.stringValue = command

@@ -20,6 +20,10 @@ final class LanguageSession {
         let replaceStart: Int?
         /// A code snippet's body: accepting the item expands it.
         var snippet: String? = nil
+        /// What the item is, shown beside the list; nil until the server is asked (see `raw`).
+        var documentation: String? = nil
+        /// The server's item, to ask it for the documentation with completionItem/resolve.
+        var raw: [String: Any]? = nil
     }
 
     let server: LanguageServer
@@ -114,12 +118,41 @@ final class LanguageSession {
                         replaceStart = lines.offset(line: line, character: character)
                     }
                 }
-                if item["insertTextFormat"] as? Int == 2 { text = Self.stripSnippet(text) }
+                // A snippet with fields to fill in is expanded when accepted (Tab moves between its fields).
+                var snippet: String?
+                if item["insertTextFormat"] as? Int == 2 {
+                    if SnippetTemplate.hasFields(text) { snippet = text }
+                    text = Self.stripSnippet(text)
+                }
                 return CompletionItem(label: label.trimmingCharacters(in: .whitespaces), detail: item["detail"] as? String ?? "",
                                       kind: item["kind"] as? Int ?? 0, text: text,
                                       filterText: item["filterText"] as? String ?? label, sortText: item["sortText"] as? String ?? label,
-                                      replaceStart: replaceStart)
+                                      replaceStart: replaceStart, snippet: snippet, documentation: Self.documentation(item["documentation"]), raw: item)
             })
+        }
+    }
+
+    /// Documentation as a string or MarkupContent, as plain text (nil if there is none).
+    static func documentation(_ value: Any?) -> String? {
+        let text = (value as? String) ?? ((value as? [String: Any])?["value"] as? String)
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let plain = HoverText.plain(text)
+        return plain.isEmpty ? nil : plain
+    }
+
+    /// Parameter Info at an offset: the signatures, the active one and the active parameter.
+    func signatureHelp(at offset: Int, handler: @escaping ((signatures: [SignatureInfo], active: Int, parameter: Int)) -> Void) {
+        var parameters = params(at: offset)
+        parameters["context"] = ["triggerKind": 1, "isRetrigger": false]
+        server.request("textDocument/signatureHelp", parameters) { handler(ParameterInfo.fromLSP($0)) }
+    }
+
+    /// Asks the server for an item's documentation and fuller detail.
+    func resolve(_ item: CompletionItem, handler: @escaping (_ documentation: String?, _ detail: String?) -> Void) {
+        guard let raw = item.raw, server.resolvesCompletions else { return handler(nil, nil) }
+        server.request("completionItem/resolve", raw) { result in
+            let resolved = result as? [String: Any]
+            handler(Self.documentation(resolved?["documentation"]), resolved?["detail"] as? String)
         }
     }
 
@@ -301,13 +334,7 @@ final class LanguageSession {
     }
 
     /// "print(${1:value})$0" → "print(value)"
-    static func stripSnippet(_ text: String) -> String {
-        var result = text
-        if let regex = try? NSRegularExpression(pattern: #"\$\{\d+:([^}]*)\}|\$\{\d+\}|\$\d+"#) {
-            result = regex.stringByReplacingMatches(in: result, range: NSRange(location: 0, length: (result as NSString).length), withTemplate: "$1")
-        }
-        return result
-    }
+    static func stripSnippet(_ text: String) -> String { SnippetTemplate.plainText(text) }
 }
 
 /// Events from the editor that IntelliSense reacts to.
@@ -322,6 +349,8 @@ protocol CodeTextViewAssistant: AnyObject {
     func textView(_ textView: CodeTextView, goToDefinitionAt index: Int)
     /// Tab after a snippet shortcut (`prop`, `For`, `cw`…) expands it. Returns true if it did.
     func textViewExpandSnippet(_ textView: CodeTextView) -> Bool
+    /// The caret moved (Parameter Info follows it through a call's arguments).
+    func textViewDidChangeSelection(_ textView: CodeTextView)
 }
 
 /// Completion list, hover info, definitions, references, rename and refactorings for one window. Files with a
@@ -335,6 +364,10 @@ final class IntelliSense: CodeTextViewAssistant {
     var onReferences: ((String, [LanguageSession.Location]) -> Void)?
     var onStatus: ((String) -> Void)?
     private let completion = CompletionPopup()
+    private let parameterInfo = ParameterInfoPopup()
+    private let history = CompletionHistory()
+    private var signatureGeneration = 0
+    private var signatureRefresh: DispatchWorkItem?
     private var hoverPopover: NSPopover?
     private var hoverIndex = -1
     private var requestGeneration = 0
@@ -352,6 +385,12 @@ final class IntelliSense: CodeTextViewAssistant {
     func textView(_ textView: CodeTextView, didInsert text: String) {
         closeHover()
         guard let document = document(textView), !completion.isAccepting else { return }
+        // Parameter Info opens on ( and , and follows the caret through the arguments.
+        if text == "(" || text == "," || document.session?.server.signatureTriggerCharacters?.contains(text) == true {
+            showParameterInfo(in: textView, explicit: false)
+        } else if parameterInfo.isVisible {
+            refreshParameterInfoSoon(textView)
+        }
         let isIdentifier = text.count == 1 && text.unicodeScalars.allSatisfy { Self.identifierCharacters.contains($0) }
         if completion.isVisible {
             if isIdentifier { return completion.refilter() }
@@ -367,10 +406,23 @@ final class IntelliSense: CodeTextViewAssistant {
 
     func textViewDidDeleteBackward(_ textView: CodeTextView) {
         if completion.isVisible { completion.refilter() }
+        if parameterInfo.isVisible { refreshParameterInfoSoon(textView) }
+    }
+
+    func textViewDidChangeSelection(_ textView: CodeTextView) {
+        if parameterInfo.isVisible { refreshParameterInfoSoon(textView) }
     }
 
     func textView(_ textView: CodeTextView, handle command: Selector) -> Bool {
-        completion.isVisible && completion.handle(command)
+        if completion.isVisible, completion.handle(command) { return true }
+        guard parameterInfo.isVisible, !completion.isVisible else { return false }
+        switch command {
+        case #selector(NSResponder.moveUp(_:)) where parameterInfo.overloadCount > 1: parameterInfo.cycle(-1)
+        case #selector(NSResponder.moveDown(_:)) where parameterInfo.overloadCount > 1: parameterInfo.cycle(1)
+        case #selector(NSResponder.cancelOperation(_:)): parameterInfo.hide()
+        default: return false
+        }
+        return true
     }
 
     func textViewRequestedCompletion(_ textView: CodeTextView) {
@@ -386,6 +438,20 @@ final class IntelliSense: CodeTextViewAssistant {
     }
 
     private func requestCompletion(_ textView: CodeTextView, document: EditorDocument, explicit: Bool = false) {
+        completion.languageId = document.language.id
+        completion.session = document.session
+        completion.history = history
+        completion.onAccepted = { [weak self, weak document] item, textView in
+            guard let self, let document else { return }
+            history.used(item.label, languageId: document.language.id)
+            // A method accepted with its parentheses: show what goes in them.
+            if let codeView = textView as? CodeTextView,
+               ParameterInfo.call(in: codeView.string, at: codeView.selectedRange().location, language: document.language) != nil {
+                DispatchQueue.main.async { [weak self, weak codeView] in
+                    if let codeView { self?.showParameterInfo(in: codeView, explicit: false) }
+                }
+            }
+        }
         requestGeneration += 1
         let generation = requestGeneration
         let cursor = textView.selectedRange().location
@@ -436,6 +502,84 @@ final class IntelliSense: CodeTextViewAssistant {
         return index
     }
 
+    // MARK: Parameter Info
+
+    /// Parameter Info (⇧⌘Space): the ways to call the function the caret is in, its current argument in bold.
+    func showParameterInfo(in textView: CodeTextView, explicit: Bool = true) {
+        guard let document = document(textView) else { return }
+        signatureGeneration += 1
+        let generation = signatureGeneration
+        let cursor = textView.selectedRange().location
+        let text = textView.string
+        let call = ParameterInfo.call(in: text, at: cursor, language: document.language)
+        let fromProject = { [weak self, weak textView] in
+            guard let self, let textView, generation == signatureGeneration else { return }
+            guard let call else {
+                parameterInfo.hide()
+                if explicit { onStatus?("No parameter info here: put the caret inside a call's parentheses") }
+                return
+            }
+            let symbols = ProjectIndex.shared.symbols(including: document)
+            let signatures = ParameterInfo.basic(text: text, call: call, language: document.language, symbols: symbols)
+            guard !signatures.isEmpty else {
+                parameterInfo.hide()
+                if explicit { onStatus?("No parameter info for “\(call.name)”") }
+                return
+            }
+            parameterInfo.show(signatures, active: ParameterInfo.bestOverload(signatures, argument: call.argument), argument: call.argument,
+                               at: call.nameStart, paren: call.openParen, in: textView)
+        }
+        if let session = document.session, session.server.signatureTriggerCharacters != nil {
+            session.signatureHelp(at: cursor) { [weak self, weak textView] help in
+                guard let self, let textView, generation == signatureGeneration, textView.selectedRange().location == cursor else { return }
+                guard !help.signatures.isEmpty else { return fromProject() }
+                parameterInfo.show(help.signatures, active: help.active, argument: help.parameter,
+                                   at: call?.nameStart ?? cursor, paren: call?.openParen ?? -1, in: textView)
+            }
+            return
+        }
+        fromProject()
+    }
+
+    private func refreshParameterInfoSoon(_ textView: CodeTextView) {
+        signatureRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self, weak textView] in
+            guard let self, let textView, parameterInfo.isVisible else { return }
+            showParameterInfo(in: textView, explicit: false)
+        }
+        signatureRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    func closeParameterInfo() {
+        signatureGeneration += 1
+        parameterInfo.hide()
+    }
+
+    /// The signature Parameter Info shows (the current parameter in [brackets]), for scripts.
+    var parameterInfoText: String? { parameterInfo.isVisible ? parameterInfo.text : nil }
+
+    /// The selected completion item's explanation, for scripts.
+    var completionExplanation: String? { completion.isVisible ? completion.shownExplanation : nil }
+
+    /// What a keyword means (void, let, padding…), where language servers have nothing to say about it.
+    private func keywordGuide(at index: Int, in textView: NSTextView, document: EditorDocument) -> String? {
+        guard let (word, range, _) = BasicIntelliSense.word(at: index, in: textView.string) else { return nil }
+        let language = document.language
+        let isCSS = ["css", "scss", "less"].contains(language.id)
+        let isKeyword = language.caseInsensitiveKeywords
+            ? (language.keywords.union(language.types)).contains { $0.lowercased() == word.lowercased() }
+            : language.keywords.contains(word) || language.types.contains(word)
+        guard isKeyword || isCSS else { return nil }
+        // Not in a string or comment.
+        let ns = textView.string as NSString
+        let line = ns.lineRange(for: NSRange(location: range.location, length: 0))
+        let masked = ExtractMethod.mask(ns.substring(with: line), language: language) as NSString
+        let at = range.location - line.location
+        guard at < masked.length, masked.character(at: at) == ns.character(at: range.location) else { return nil }
+        return KeywordGuide.explain(word, languageId: language.id).map { "\(word): \($0)" }
+    }
+
     // MARK: Hover
 
     func textView(_ textView: CodeTextView, hoverAt index: Int) {
@@ -448,12 +592,16 @@ final class IntelliSense: CodeTextViewAssistant {
             let text = [problem, info].compactMap { $0 }.joined(separator: "\n\n")
             if !text.isEmpty { showHover(text, at: index, in: textView) }
         }
+        let guide = { [weak self, weak textView] () -> String? in
+            guard let self, let textView else { return nil }
+            return keywordGuide(at: index, in: textView, document: document)
+        }
         if let session = document.session {
-            session.hover(at: index, handler: show)
+            session.hover(at: index) { show($0 ?? guide()) }
         } else if usesBasic(document) {
-            show(BasicIntelliSense.hover(at: index, text: textView.string, languageId: document.language.id, symbols: ProjectIndex.shared.symbols(including: document)))
+            show(BasicIntelliSense.hover(at: index, text: textView.string, languageId: document.language.id, symbols: ProjectIndex.shared.symbols(including: document)) ?? guide())
         } else {
-            show(nil)
+            show(guide())
         }
     }
 
@@ -708,7 +856,7 @@ final class ActionItem: NSMenuItem {
     @objc private func run() { handler() }
 }
 
-/// The IntelliSense list that appears under the cursor.
+/// The IntelliSense list that appears under the cursor, with the selected item explained beside it.
 final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     private let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 200),
                                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -718,6 +866,18 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private weak var textView: NSTextView?
     private var wordStart = 0
     private(set) var isAccepting = false
+    /// The language of the list's file, for explaining keywords and built-in functions.
+    var languageId = ""
+    /// The server to ask for an item's documentation (completionItem/resolve).
+    weak var session: LanguageSession?
+    var history: CompletionHistory?
+    /// Called after an item is inserted.
+    var onAccepted: ((LanguageSession.CompletionItem, NSTextView) -> Void)?
+    private let detailPanel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 330, height: 100),
+                                      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    private let detailText = NSTextField(wrappingLabelWithString: "")
+    /// Documentation the server sent when asked, by item.
+    private var resolved: [String: (documentation: String?, detail: String?)] = [:]
 
     var isVisible: Bool { panel.isVisible }
 
@@ -737,27 +897,38 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
+        panel.contentView = Self.frame(scroll, margins: NSSize(width: 1, height: 1))
+        for window in [panel, detailPanel] {
+            window.hasShadow = true
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.level = .popUpMenu
+        }
+        detailText.isSelectable = false
+        detailPanel.contentView = Self.frame(detailText, margins: NSSize(width: 10, height: 8))
+    }
+
+    private static func frame(_ content: NSView, margins: NSSize) -> NSBox {
         let box = NSBox()
         box.boxType = .custom
         box.fillColor = Theme.sidebar
         box.borderColor = Theme.separator
         box.borderWidth = 1
         box.cornerRadius = 4
-        box.contentViewMargins = NSSize(width: 1, height: 1)
-        box.contentView = scroll
-        panel.contentView = box
-        panel.hasShadow = true
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.level = .popUpMenu
+        box.contentViewMargins = margins
+        box.contentView = content
+        return box
     }
 
     func show(_ items: [LanguageSession.CompletionItem], in textView: NSTextView, wordStart: Int) {
         self.items = items
         self.textView = textView
         self.wordStart = wordStart
+        resolved = [:]
         refilter()
     }
+
+    private func recency(_ item: LanguageSession.CompletionItem) -> Int { history?.recency(of: item.label, languageId: languageId) ?? 0 }
 
     func refilter() {
         guard let textView else { return hide() }
@@ -765,10 +936,14 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         guard cursor >= wordStart else { return hide() }
         let prefix = (textView.string as NSString).substring(with: NSRange(location: wordStart, length: cursor - wordStart))
         if prefix.isEmpty {
-            shown = items.sorted { $0.sortText < $1.sortText }
-        } else {
-            shown = items.compactMap { item in FuzzyMatch.score(prefix, item.filterText).map { (item, $0) } }
+            // Names picked lately first, then the server's order.
+            shown = items.map { ($0, recency($0)) }
                 .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.sortText < $1.0.sortText }
+                .map(\.0)
+        } else {
+            // The best kind of match first (exact, start, capitals: sb → StringBuilder…), then names picked lately.
+            shown = items.compactMap { item in CompletionMatch.score(prefix, item.filterText).map { (item, $0, recency(item)) } }
+                .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 != $1.2 ? $0.2 > $1.2 : $0.0.sortText < $1.0.sortText }
                 .map(\.0)
         }
         if shown.count > 300 { shown = Array(shown.prefix(300)) }
@@ -791,12 +966,80 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         panel.setFrame(frame, display: true)
         if panel.parent == nil { window.addChildWindow(panel, ordered: .above) }
         panel.orderFront(nil)
+        showDetail()
     }
 
     func hide() {
         guard panel.isVisible else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
+        hideDetail()
+    }
+
+    private func hideDetail() {
+        detailPanel.parent?.removeChildWindow(detailPanel)
+        detailPanel.orderOut(nil)
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        if panel.isVisible { showDetail() }
+    }
+
+    /// The selected item's explanation (for scripts).
+    var shownExplanation: String? { detailPanel.isVisible ? detailText.stringValue : nil }
+
+    /// What to say about an item: its signature, then the server's documentation, what a keyword or built-in function means,
+    /// or a snippet's text.
+    private func describe(_ item: LanguageSession.CompletionItem) -> (title: String, body: String?) {
+        let fetched = resolved[item.label + "\u{1}\(item.kind)"]
+        let detail = fetched?.detail ?? item.detail
+        let title = !detail.isEmpty && item.kind != 14 && detail != "Keyword" ? detail : item.label
+        let body: String?
+        if let documentation = fetched?.documentation ?? item.documentation, !documentation.isEmpty {
+            body = documentation
+        } else if item.kind == 14 || item.detail == "Keyword" {
+            body = KeywordGuide.explain(item.label, languageId: languageId)
+        } else if item.kind == 15, let snippet = item.snippet {
+            body = "Snippet: press Tab to insert it, then Tab to move between the parts to fill in.\n\n" + SnippetTemplate.plainText(snippet)
+        } else if [2, 3].contains(item.kind) {
+            body = BuiltInFunctions.explain(languageId: languageId, name: item.label)
+        } else {
+            body = nil
+        }
+        return (title, body.map { $0.count > 900 ? String($0.prefix(900)) + "…" : $0 })
+    }
+
+    private func showDetail() {
+        guard panel.isVisible, shown.indices.contains(table.selectedRow), let window = panel.parent else { return hideDetail() }
+        let item = shown[table.selectedRow]
+        let (title, body) = describe(item)
+        // Ask the server once for documentation it left out of the list.
+        let key = item.label + "\u{1}\(item.kind)"
+        if body == nil, resolved[key] == nil, let session, item.raw != nil {
+            resolved[key] = (nil, nil)
+            session.resolve(item) { [weak self] documentation, detail in
+                guard let self else { return }
+                resolved[key] = (documentation, detail)
+                if panel.isVisible, shown.indices.contains(table.selectedRow), shown[table.selectedRow].label == item.label { showDetail() }
+            }
+        }
+        guard body != nil || title != item.label else { return hideDetail() }
+        let text = NSMutableAttributedString(string: title, attributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 11.5, weight: .semibold), .foregroundColor: NSColor.labelColor,
+        ])
+        if let body {
+            text.append(NSAttributedString(string: "\n\n" + body, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]))
+        }
+        detailText.attributedStringValue = text
+        detailText.preferredMaxLayoutWidth = 310
+        let size = detailText.fittingSize
+        let height = min(size.height + 16, 280)
+        let list = panel.frame
+        var frame = NSRect(x: list.maxX + 4, y: list.maxY - height, width: 330, height: height)
+        if let screen = window.screen?.visibleFrame, frame.maxX > screen.maxX { frame.origin.x = list.minX - 4 - 330 }
+        detailPanel.setFrame(frame, display: true)
+        if detailPanel.parent == nil { window.addChildWindow(detailPanel, ordered: .above) }
+        detailPanel.orderFront(nil)
     }
 
     func handle(_ command: Selector) -> Bool {
@@ -835,6 +1078,7 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
             textView.insertText(item.text, replacementRange: NSRange(location: start, length: cursor - start))
         }
         isAccepting = false
+        onAccepted?(item, textView)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { shown.count }
@@ -878,5 +1122,115 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         case 25: ("T", .systemTeal)                      // type parameter
         default: ("•", .secondaryLabelColor)
         }
+    }
+}
+
+/// Parameter Info: the ways to call the function the caret is in, above the line, with the current argument in bold and what
+/// the function and that parameter are for. ↑ and ↓ move between overloads.
+final class ParameterInfoPopup {
+    private let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 40),
+                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    private let label = NSTextField(wrappingLabelWithString: "")
+    private var signatures: [SignatureInfo] = []
+    private var selected = 0
+    private var argument = 0
+    private var paren = -1
+    private var anchor = 0
+    private weak var textView: NSTextView?
+
+    var isVisible: Bool { panel.isVisible }
+    var overloadCount: Int { signatures.count }
+
+    init() {
+        let box = NSBox()
+        box.boxType = .custom
+        box.fillColor = Theme.sidebar
+        box.borderColor = Theme.separator
+        box.borderWidth = 1
+        box.cornerRadius = 4
+        box.contentViewMargins = NSSize(width: 8, height: 5)
+        box.contentView = label
+        label.isSelectable = false
+        panel.contentView = box
+        panel.hasShadow = true
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.level = .popUpMenu
+    }
+
+    /// Shows the signatures for the call whose name starts at `anchor`. The same call again keeps the overload the user chose.
+    func show(_ signatures: [SignatureInfo], active: Int, argument: Int, at anchor: Int, paren: Int, in textView: NSTextView) {
+        let sameCall = isVisible && paren == self.paren && signatures.count == self.signatures.count && textView === self.textView
+        self.signatures = signatures
+        self.argument = argument
+        self.paren = paren
+        self.anchor = anchor
+        self.textView = textView
+        selected = sameCall ? min(selected, signatures.count - 1) : min(max(active, 0), max(signatures.count - 1, 0))
+        render()
+    }
+
+    func cycle(_ delta: Int) {
+        guard signatures.count > 1 else { return }
+        selected = (selected + delta + signatures.count) % signatures.count
+        render()
+    }
+
+    func hide() {
+        guard panel.isVisible else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+    }
+
+    private var parameter: Int { signatures.indices.contains(selected) ? ParameterInfo.activeParameter(signatures[selected], argument: argument) : -1 }
+
+    /// The signature with the current parameter in [brackets] (for scripts).
+    var text: String {
+        guard signatures.indices.contains(selected) else { return "" }
+        let signature = signatures[selected]
+        guard parameter >= 0, NSMaxRange(signature.parameters[parameter]) <= (signature.label as NSString).length else { return signature.label }
+        let ns = signature.label as NSString
+        let range = signature.parameters[parameter]
+        return ns.substring(to: range.location) + "[" + ns.substring(with: range) + "]" + ns.substring(from: NSMaxRange(range))
+    }
+
+    private func render() {
+        guard let textView, let window = textView.window, signatures.indices.contains(selected) else { return hide() }
+        let signature = signatures[selected]
+        let code = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let text = NSMutableAttributedString()
+        if signatures.count > 1 {
+            text.append(NSAttributedString(string: "▲▼ \(selected + 1) of \(signatures.count)   ",
+                                           attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]))
+        }
+        let label = NSMutableAttributedString(string: signature.label, attributes: [.font: code, .foregroundColor: NSColor.labelColor])
+        if parameter >= 0, NSMaxRange(signature.parameters[parameter]) <= label.length {
+            label.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 12, weight: .bold), range: signature.parameters[parameter])
+        }
+        text.append(label)
+        var notes: [String] = []
+        if !signature.documentation.isEmpty { notes.append(signature.documentation.count > 500 ? String(signature.documentation.prefix(500)) + "…" : signature.documentation) }
+        if parameter >= 0, signature.parameterDocs.indices.contains(parameter), !signature.parameterDocs[parameter].isEmpty {
+            notes.append((signature.label as NSString).substring(with: signature.parameters[parameter]) + ": " + signature.parameterDocs[parameter])
+        }
+        if !notes.isEmpty {
+            text.append(NSAttributedString(string: "\n" + notes.joined(separator: "\n"),
+                                           attributes: [.font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: NSColor.secondaryLabelColor]))
+        }
+        self.label.attributedStringValue = text
+        self.label.preferredMaxLayoutWidth = 560
+        let size = self.label.fittingSize
+        let width = min(size.width, 560) + 18
+        let height = size.height + 12
+        // Above the line, like Visual Studio, so the completion list below stays clear.
+        let caret = textView.firstRect(forCharacterRange: NSRange(location: min(anchor, (textView.string as NSString).length), length: 0), actualRange: nil)
+        var frame = NSRect(x: caret.minX - 8, y: caret.maxY + 2, width: width, height: height)
+        if let screen = window.screen?.visibleFrame {
+            if frame.maxY > screen.maxY { frame.origin.y = caret.minY - height - 2 }
+            if frame.maxX > screen.maxX { frame.origin.x = max(screen.maxX - width, screen.minX) }
+        }
+        panel.setFrame(frame, display: true)
+        if panel.parent == nil { window.addChildWindow(panel, ordered: .above) }
+        panel.orderFront(nil)
     }
 }

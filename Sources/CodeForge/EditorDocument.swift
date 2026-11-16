@@ -181,7 +181,9 @@ final class EditorDocument: NSObject, NSTextViewDelegate {
                 while range.length > 0, [0x0A, 0x0D].contains(ns.character(at: NSMaxRange(range) - 1)) { range.length -= 1 }
             }
             guard range.length > 0, NSMaxRange(range) <= ns.length else { continue }
-            diagnosticRanges.append((range, (diagnostic.severity == .error ? "Error: " : "Warning: ") + diagnostic.message))
+            // With a plain-language explanation for the ones beginners meet most.
+            diagnosticRanges.append((range, (diagnostic.severity == .error ? "Error: " : "Warning: ") + diagnostic.message
+                                        + (diagnostic.explanation.map { "\n💡 " + $0 } ?? "")))
             layoutManager.addTemporaryAttributes([
                 .underlineStyle: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
                 .underlineColor: diagnostic.severity == .error ? Theme.errorRed : Theme.warningYellow,

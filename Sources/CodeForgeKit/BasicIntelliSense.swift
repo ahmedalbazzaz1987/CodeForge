@@ -135,6 +135,21 @@ public enum BasicIntelliSense {
         return items.sorted { $0.label.lowercased() < $1.label.lowercased() }
     }
 
+    /// The signatures of the methods called `name` on `a.b` (every overload), for Parameter Info.
+    static func methodSignatures(of expression: [String], named name: String, text: String, offset: Int, languageId: String, symbols: [CodeSymbol]) -> [String] {
+        let ci = languageId == "vb"
+        func same(_ a: String, _ b: String) -> Bool { ci ? a.lowercased() == b.lowercased() : a == b }
+        guard let target = resolve(expression, text: text, offset: offset, languageId: languageId, symbols: symbols) else { return [] }
+        let typeName: String
+        switch target {
+        case .type(let name), .instance(let name): typeName = DotNetCatalog.baseName(name)
+        case .namespace: return []
+        }
+        let project = symbols.filter { $0.container?.lowercased() == typeName.lowercased() && same($0.name, name) && ($0.kind == .method || $0.kind == .function) }
+        if !project.isEmpty { return project.map(\.signature) }
+        return DotNetCatalog.type(named: typeName)?.members.filter { $0.isMethod && same($0.name, name) }.map(\.signature) ?? []
+    }
+
     /// Works out the type of `a.b.c` step by step.
     static func resolve(_ expression: [String], text: String, offset: Int, languageId: String, symbols: [CodeSymbol]) -> Target? {
         guard let first = expression.first else { return nil }

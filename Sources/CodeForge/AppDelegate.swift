@@ -135,6 +135,7 @@ enum MainMenu {
             menu.add("Go to Line…", #selector(CodeTextView.goToLine(_:)), "l")
             menu.addItem(.separator())
             menu.add("Show Completions", #selector(CodeTextView.showCompletions(_:)), " ", .control)
+            menu.add("Parameter Info", #selector(WorkspaceWindowController.showParameterInfo(_:)), " ", [.command, .shift])
             menu.add("Go to Definition", #selector(WorkspaceWindowController.goToDefinition(_:)), MainMenu.functionKey(NSF12FunctionKey), [])
             menu.add("Find All References", #selector(WorkspaceWindowController.findAllReferences(_:)), MainMenu.functionKey(NSF12FunctionKey), .shift)
             let refactor = NSMenu(title: "Refactor")

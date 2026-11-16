@@ -177,8 +177,14 @@ final class ErrorListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
     private var folder: URL?
     private let table = NSTableView()
     private let empty = NSTextField(labelWithString: "No errors or warnings.")
+    /// The selected error, explained in plain words under the list.
+    private let explanation = NSTextField(wrappingLabelWithString: "")
+    private var explanationHeight: NSLayoutConstraint!
 
     var count: Int { diagnostics.count }
+
+    /// The explanation shown for the selected error, for scripts.
+    var shownExplanation: String? { explanation.isHidden ? nil : explanation.stringValue }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -201,15 +207,23 @@ final class ErrorListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         empty.textColor = .secondaryLabelColor
-        for view in [scroll, empty] {
+        explanation.font = .systemFont(ofSize: 12)
+        explanation.isHidden = true
+        explanation.isSelectable = true
+        for view in [scroll, empty, explanation] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
+        explanationHeight = explanation.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: topAnchor),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scroll.bottomAnchor.constraint(equalTo: explanation.topAnchor, constant: -4),
+            explanation.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            explanation.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            explanation.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            explanationHeight,
             empty.centerXAnchor.constraint(equalTo: centerXAnchor),
             empty.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -222,6 +236,24 @@ final class ErrorListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
         self.folder = folder
         empty.isHidden = !diagnostics.isEmpty
         table.reloadData()
+        showExplanation()
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) { showExplanation() }
+
+    /// Selects a row (for scripts), showing its explanation.
+    func select(row: Int) {
+        guard diagnostics.indices.contains(row) else { return }
+        table.selectRowIndexes([row], byExtendingSelection: false)
+    }
+
+    private func showExplanation() {
+        let row = table.selectedRow
+        let text = diagnostics.indices.contains(row) ? diagnostics[row].explanation : nil
+        explanation.stringValue = text.map { "💡 " + $0 } ?? ""
+        explanation.isHidden = text == nil
+        explanation.preferredMaxLayoutWidth = max(bounds.width - 20, 200)
+        explanationHeight.constant = text == nil ? 0 : min(explanation.fittingSize.height, 60)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { diagnostics.count }
@@ -235,7 +267,10 @@ final class ErrorListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
                                                    accessibilityDescription: diagnostic.severity.rawValue)!)
             image.contentTintColor = isError ? Theme.errorRed : Theme.warningYellow
             return image
-        case "message": return label(diagnostic.message)
+        case "message":
+            let field = label(diagnostic.message)
+            if let explanation = diagnostic.explanation { field.toolTip = diagnostic.message + "\n\n💡 " + explanation }
+            return field
         case "file": return label((diagnostic.file as NSString).lastPathComponent, secondary: true)
         default: return label("\(diagnostic.line)", secondary: true)
         }

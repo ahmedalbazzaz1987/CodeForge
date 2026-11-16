@@ -14,12 +14,12 @@ public struct ToolboxItem: Sendable, Equatable {
         self.snippet = snippet
     }
 
-    /// The snippet as it is inserted at a line with `indent`, and where the cursor ends up (UTF-16 offset in it).
+    /// The snippet as it is inserted at a line with `indent`, and where the cursor ends up (UTF-16 offset in it): the first
+    /// field to fill in, else `$0`, else the end (see `SnippetTemplate`).
     public func expanded(indent: String) -> (text: String, cursor: Int) {
-        let indented = snippet.replacingOccurrences(of: "\n", with: "\n" + indent)
-        guard let marker = indented.range(of: "$0") else { return (indented, (indented as NSString).length) }
-        let cursor = (String(indented[..<marker.lowerBound]) as NSString).length
-        return (indented.replacingCharacters(in: marker, with: ""), cursor)
+        let (text, fields) = SnippetTemplate.expand(snippet, indent: indent)
+        let first = fields.filter { $0.index > 0 }.min { $0.index < $1.index } ?? fields.first { $0.index == 0 }
+        return (text, first?.location ?? (text as NSString).length)
     }
 }
 
