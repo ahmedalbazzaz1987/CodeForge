@@ -91,8 +91,8 @@ final class CodeTextView: NSTextView {
             for name in [NSNotification.Name.NSUndoManagerWillUndoChange, .NSUndoManagerWillRedoChange] {
                 undoObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                     MainActor.assumeIsolated {
-                        guard let self, (note.object as? UndoManager) === undoManager else { return }
-                        endSnippet()
+                        guard let self, (note.object as? UndoManager) === self.undoManager else { return }
+                        self.endSnippet()
                     }
                 })
             }

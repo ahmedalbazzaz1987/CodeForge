@@ -937,14 +937,20 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let prefix = (textView.string as NSString).substring(with: NSRange(location: wordStart, length: cursor - wordStart))
         if prefix.isEmpty {
             // Names picked lately first, then the server's order.
-            shown = items.map { ($0, recency($0)) }
-                .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.sortText < $1.0.sortText }
-                .map(\.0)
+            let ranked: [(item: LanguageSession.CompletionItem, recency: Int)] = items.map { ($0, recency($0)) }
+            shown = ranked.sorted { a, b in a.recency != b.recency ? a.recency > b.recency : a.item.sortText < b.item.sortText }.map(\.item)
         } else {
             // The best kind of match first (exact, start, capitals: sb → StringBuilder…), then names picked lately.
-            shown = items.compactMap { item in CompletionMatch.score(prefix, item.filterText).map { (item, $0, recency(item)) } }
-                .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 != $1.2 ? $0.2 > $1.2 : $0.0.sortText < $1.0.sortText }
-                .map(\.0)
+            var ranked: [(item: LanguageSession.CompletionItem, score: Int, recency: Int)] = []
+            for item in items {
+                if let score = CompletionMatch.score(prefix, item.filterText) { ranked.append((item, score, recency(item))) }
+            }
+            ranked.sort { a, b in
+                if a.score != b.score { return a.score > b.score }
+                if a.recency != b.recency { return a.recency > b.recency }
+                return a.item.sortText < b.item.sortText
+            }
+            shown = ranked.map(\.item)
         }
         if shown.count > 300 { shown = Array(shown.prefix(300)) }
         // Nothing left, or the only match is exactly what's typed.

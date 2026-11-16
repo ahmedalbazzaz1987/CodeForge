@@ -41,6 +41,9 @@ Releases.
 - **IntelliSense.** Completions, quick info on hover, Go to Definition (F12 / ⌘-click), Find All References (⇧F12),
   Rename (F2) and live error squiggles, powered by standard language servers. VB.NET, which has no language server, gets
   Kryndev's own IntelliSense: member lists from your project and common .NET classes, hover info and Go to Definition.
+- **Help for learners.** Parameter Info (⇧⌘Space) shows how to call the function you're in; the completion list explains
+  the selected item (keywords and CSS properties included); snippets have fields to Tab through; `sb` finds
+  StringBuilder; and common errors are explained in plain words.
 - **Build and debug.** Build (⇧⌘B) understands Swift packages, Cargo, Go, CMake, Xcode projects, Make and npm.
   Debug C#, VB.NET and F# (netcoredbg), Python (debugpy) and C, C++, Objective-C, Swift and Rust (LLDB), and Go (Delve when it's installed, with variables; otherwise LLDB, which stops and steps but can't show them): breakpoints (F9), stepping
   (F10 / F11 / ⇧F11), Locals, Call Stack and an expression evaluator.

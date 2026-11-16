@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.14.0
+
+IntelliSense that helps people learning to program, in every language:
+
+- **Parameter Info** (⇧⌘Space, and on its own when you type `(` or `,`): the ways to call the function you're in, with
+  the argument you're typing in bold and what the function and that parameter are for. ↑ and ↓ move between overloads.
+  It comes from the language server, or without one from your project, the .NET classes (VB.NET) and the common
+  built-in functions of each language (`print`, `printf`, `console.log`, `fmt.Println`…).
+- **Explanations beside the completion list**: the selected item's signature and documentation, what a keyword means
+  (`void`, `let`, `async`…, and CSS properties like `margin` and `padding`), or a snippet's text. Hovering a keyword
+  explains it too.
+- **Snippets with fields to fill in**: `for`, `prop`, `class` and the other snippets now select their first part to
+  type over; Tab and ⇧Tab move between the parts, and a name used in several places (the loop variable) changes
+  everywhere at once. Return or Escape finishes. Methods from language servers come with their arguments to fill in.
+- **Smarter ordering**: capitals and word starts find names (`sb` → StringBuilder, `wl` → WriteLine), the best match
+  comes first, and names you picked lately come before others.
+- **Errors explained in plain words**: the common errors of C#, VB.NET, C, C++, Python, JavaScript, TypeScript, Java,
+  Go, Rust and Swift get a line on what they mean and how to fix them, in the hover and under the Error List.
+
 ## 0.13.0
 
 - **CodeForge is now Kryndev**, with a new icon. Only the name changed: features, settings, projects and updates stay
